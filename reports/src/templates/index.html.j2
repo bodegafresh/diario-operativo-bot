@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Diario Operativo — Dashboard</title>
+  <style>
+    :root{--bg:#0b0f19;--card:#121a2a;--text:#e7ecff;--muted:#a8b3d8;--accent:#77a7ff;}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--text);}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px;}
+    .h1{font-size:28px;font-weight:800;margin:0 0 6px;}
+    .muted{color:var(--muted);}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px;}
+    @media(min-width:900px){.grid{grid-template-columns:1.2fr .8fr;}}
+    .card{background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:16px; box-shadow:0 6px 22px rgba(0,0,0,.35);}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;}
+    th{color:var(--muted);font-weight:700;text-align:left;}
+    a{color:var(--accent);text-decoration:none;}
+    a:hover{text-decoration:underline;}
+    .kpi{display:flex;gap:16px;flex-wrap:wrap}
+    .kpi .pill{padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);}
+    .img{max-width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.10);}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="h1">Diario Operativo — Dashboard</div>
+  <div class="muted">Timezone: {{ tz }} · Rows: {{ meta.rows_daily }}</div>
+
+  <div class="grid" style="margin-top:16px">
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:10px">Heatmap (últimos días)</div>
+      <img class="img" src="{{ heatmap_rel }}" alt="heatmap"/>
+      <div class="muted" style="font-size:12px;margin-top:6px">Valores normalizados por métrica.</div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:10px">Accesos rápidos</div>
+      <div class="kpi">
+        {% for w in weekly %}
+          <div class="pill"><a href="weekly_{{ w.week }}.html">{{ w.week }}</a></div>
+        {% endfor %}
+      </div>
+      <div style="height:10px"></div>
+      <div class="kpi">
+        {% for m in monthly %}
+          <div class="pill"><a href="monthly_{{ m.month }}.html">{{ m.month }}</a></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div style="font-weight:800;margin-bottom:10px">Últimos 30 días</div>
+    <table>
+      <thead>
+        <tr>
+          <th>date</th><th>score</th><th>energy</th><th>sleep</th><th>pomo_min</th><th>focus_min</th><th>alcohol_units</th><th>stalk_intensity</th><th>feature_done</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in daily %}
+        <tr>
+          <td>{{ r.date }}</td>
+          <td>{{ r.score }}</td>
+          <td>{{ r.energy }}</td>
+          <td>{{ r.sleep_hours }}</td>
+          <td>{{ r.pomodoro_minutes }}</td>
+          <td>{{ r.focus_minutes }}</td>
+          <td>{{ r.alcohol_units }}</td>
+          <td>{{ r.stalk_intensity }}</td>
+          <td>{{ r.feature_done }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid" style="margin-top:16px">
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:10px">Resumen semanal</div>
+      <table>
+        <thead><tr>
+          <th>week</th><th>days</th><th>score_avg</th><th>pomo_min</th><th>focus_min</th><th>alcohol</th><th>stalk_avg</th>
+        </tr></thead>
+        <tbody>
+        {% for r in weekly %}
+          <tr>
+            <td><a href="weekly_{{ r.week }}.html">{{ r.week }}</a></td>
+            <td>{{ r.days }}</td>
+            <td>{{ (r.score_avg or 0) | round(2) }}</td>
+            <td>{{ r.pomodoro_min }}</td>
+            <td>{{ r.focus_min }}</td>
+            <td>{{ r.alcohol_units }}</td>
+            <td>{{ (r.stalk_intensity_avg or 0) | round(2) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:10px">Resumen mensual</div>
+      <table>
+        <thead><tr>
+          <th>month</th><th>days</th><th>score_avg</th><th>pomo_min</th><th>focus_min</th><th>alcohol</th><th>stalk_avg</th>
+        </tr></thead>
+        <tbody>
+        {% for r in monthly %}
+          <tr>
+            <td><a href="monthly_{{ r.month }}.html">{{ r.month }}</a></td>
+            <td>{{ r.days }}</td>
+            <td>{{ (r.score_avg or 0) | round(2) }}</td>
+            <td>{{ r.pomodoro_min }}</td>
+            <td>{{ r.focus_min }}</td>
+            <td>{{ r.alcohol_units }}</td>
+            <td>{{ (r.stalk_intensity_avg or 0) | round(2) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="muted" style="margin-top:16px;font-size:12px">
+    Generado por el CLI. Ajusta scoring y columnas en <code>src/diario/scoring.py</code>.
+  </div>
+</div>
+</body>
+</html>

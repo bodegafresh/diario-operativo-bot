@@ -3,17 +3,6 @@
 Bot de Telegram para registrar un **diario operativo** y generar **reportes semanales/mensuales** en HTML.  
 Pensado para ser simple, auditable y seguro (**sin credenciales en el repo**).
 
-## Nombre sugerido del repositorio
-
-**`diario-operativo-bot`**
-
-Alternativas (por si quieres algo más “marca”):
-- `operational-diary`
-- `rebuild-protocol-bot`
-- `diario-operativo-dashboard`
-
----
-
 ## Features
 
 - Entradas diarias (modo “diario operativo”) guardadas en Google Sheets.

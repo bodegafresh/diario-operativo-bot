@@ -1,111 +1,92 @@
-# 🤖 TurboCotiza / Diario Operativo Bot (Telegram + Google Apps Script)
+# 🤖 TurboCotiza -- Bot de Productividad (Telegram + Apps Script + Cloudflare)
 
-Este proyecto documenta la creación de un **bot de Telegram** orientado
-a **productividad personal** (diario, check-ins conscientes y Pomodoro),
-usando **Google Apps Script** como backend y un **Cloudflare Worker**
-como proxy estable para el webhook.
+Este repositorio documenta **paso a paso** cómo construir un bot de
+Telegram robusto usando **Google Apps Script** como backend, **Google
+Sheets** como almacenamiento y un **Cloudflare Worker** como proxy para
+evitar errores típicos de webhooks (302 / 500).
 
-El objetivo de este README es que **cualquier persona pueda replicarlo,
-adaptarlo o extenderlo** para sus propias necesidades.
+Está pensado para **divulgación técnica** y para que cualquier persona
+pueda **replicarlo, adaptarlo o extenderlo**.
 
 ------------------------------------------------------------------------
 
 ## ✨ Funcionalidades
 
--   📓 **/diario** -- Registro diario guiado (guardado en Google Sheets)
--   ⏱️ **/pomodoro start \| stop \| status** -- Técnica 25/5 ×4 +
-    descanso largo
--   🧠 **Check-ins aleatorios** (3 al día, 06--22)
--   🔔 Recordatorio diario para completar el diario
+-   📓 `/diario` -- Registro diario guiado (persistente en Google
+    Sheets)
+-   ⏱️ `/pomodoro start | stop | status` -- 25/5 ×4 + descanso largo
+-   🧠 Check-ins aleatorios conscientes (3 por día)
+-   🔔 Recordatorio diario automático
 -   📊 Persistencia en Google Sheets
--   🧠 Diseño pensado para autoconciencia y foco
--   🛡️ Webhook estable (sin errores 302/500)
+-   🛡️ Webhook estable (sin caídas por redirects)
 
 ------------------------------------------------------------------------
 
-## 🧱 Arquitectura
+## 🧠 Arquitectura (visión general)
 
-    Telegram
-       ↓
-    Cloudflare Worker (proxy, siempre responde 200 OK)
-       ↓
-    Google Apps Script (lógica del bot)
-       ↓
-    Google Sheets (datos)
+    ┌──────────┐
+    │ Telegram │
+    └────┬─────┘
+         │ Webhook HTTPS
+         ▼
+    ┌────────────────────┐
+    │ Cloudflare Worker  │  ← proxy (siempre responde 200 OK)
+    └────┬───────────────┘
+         │ POST (redirects permitidos)
+         ▼
+    ┌────────────────────┐
+    │ Google Apps Script │
+    │  - doPost()        │
+    │  - lógica bot      │
+    └────┬───────────────┘
+         │
+         ▼
+    ┌────────────────────┐
+    │ Google Sheets      │
+    │ (Daily, Checkins, │
+    │  Pomodoro)        │
+    └────────────────────┘
 
-> **Por qué usar un Worker:**\
-> Telegram no tolera redirects (302).\
-> Apps Script **sí** redirige internamente.\
-> El Worker absorbe eso y estabiliza el webhook.
+👉 **Clave:** Telegram NO tolera redirects (302).\
+👉 Apps Script SÍ redirige internamente.\
+👉 El Worker absorbe eso y estabiliza el sistema.
 
 ------------------------------------------------------------------------
 
 ## 🧰 Herramientas necesarias
 
 -   Cuenta de **Telegram**
--   **BotFather** (para crear el bot)
+-   **@BotFather**
 -   **Google Apps Script**
 -   **Google Sheets**
 -   Cuenta **Cloudflare (gratis)** → Workers
--   Navegador (Chrome recomendado)
+-   Navegador web
 
 ------------------------------------------------------------------------
 
 ## 🚀 Paso 1 -- Crear el bot en Telegram
 
-1.  Abre Telegram → busca **@BotFather**
+1.  Abrir Telegram → buscar **@BotFather**
 
-2.  Ejecuta:
+2.  Ejecutar:
 
-        /start
         /newbot
 
-3.  Guarda el **BOT_TOKEN**
+3.  Elegir nombre y username
+
+4.  Guardar el **BOT_TOKEN** (muy importante)
 
 ------------------------------------------------------------------------
 
-## 🚀 Paso 2 -- Google Apps Script
+## 🚀 Paso 2 -- Google Apps Script (backend)
 
-### Crear el proyecto
+### Crear proyecto
 
-1.  Ve a https://script.google.com
+1.  https://script.google.com
 2.  Nuevo proyecto
-3.  Pega el código del bot (handlers, pomodoro, diario, check-ins)
+3.  Pegar el código del bot (handlers, pomodoro, diario, check-ins)
 
-### Web App
-
-1.  **Implementar → Administrar implementaciones**
-2.  Tipo: **Aplicación web**
-3.  Ejecutar como: **Tú**
-4.  Acceso: **Cualquiera**
-5.  Copia la URL:
-
-```{=html}
-<!-- -->
-```
-    https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
-
-Ese `<DEPLOYMENT_ID>` es clave.
-
-------------------------------------------------------------------------
-
-## ⚙️ Script Properties requeridas
-
-En **Configuración del proyecto → Propiedades del script**:
-
-    BOT_TOKEN=xxxxx
-    SPREADSHEET_ID=xxxxx
-    WEBAPP_URL=https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
-
-(Opcional)
-
-    CHAT_ID=se_autodetecta
-
-------------------------------------------------------------------------
-
-## 🧪 Endpoints obligatorios
-
-En el código de Apps Script:
+### Funciones obligatorias del Web App
 
 ``` js
 function doGet() {
@@ -115,9 +96,9 @@ function doGet() {
 function doPost(e) {
   try {
     const update = JSON.parse(e.postData.contents);
-    // manejar mensaje
-  } catch (e) {
-    console.error(e);
+    // manejar comandos: /help, /status, /diario, /pomodoro
+  } catch (err) {
+    console.error(err);
   }
   return ContentService.createTextOutput("ok");
 }
@@ -125,15 +106,58 @@ function doPost(e) {
 
 ------------------------------------------------------------------------
 
-## ☁️ Paso 3 -- Cloudflare Worker (gratis)
+## 🌐 Crear la Web App (muy importante)
 
-### Crear Worker
+1.  **Implementar → Administrar implementaciones**
+2.  **Nueva implementación**
+3.  Tipo: **Aplicación web**
+4.  Ejecutar como: **Tú**
+5.  Quién tiene acceso: **Cualquiera**
+6.  Implementar
+7.  Copiar la URL:
+
+```{=html}
+<!-- -->
+```
+    https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
+
+📌 El `<DEPLOYMENT_ID>` es la parte entre `/s/` y `/exec`.
+
+------------------------------------------------------------------------
+
+## ⚙️ Script Properties (Apps Script)
+
+Ir a: **Configuración del proyecto → Propiedades del script**
+
+Agregar:
+
+    BOT_TOKEN=xxxxxxxxxxxxxxxx
+    SPREADSHEET_ID=xxxxxxxxxxxxxxxx
+    WEBAPP_URL=https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
+
+Opcional (se autodetecta):
+
+    CHAT_ID=
+
+------------------------------------------------------------------------
+
+## 📄 Google Sheets
+
+Crear una hoja y copiar su ID (`/d/<ID>/edit`).
+
+El script crea automáticamente las hojas: - `Daily` - `Checkins` -
+`Pomodoro`
+
+------------------------------------------------------------------------
+
+## ☁️ Paso 3 -- Cloudflare Worker (proxy)
+
+### Crear Worker (gratis)
 
 1.  https://dash.cloudflare.com
 2.  **Workers & Pages**
 3.  **Create application → Worker**
-
-### Código del Worker
+4.  Pegar este código:
 
 ``` js
 export default {
@@ -158,17 +182,25 @@ export default {
 
 ### Variable de entorno del Worker
 
+En **Settings → Variables**:
+
     GAS_WEBAPP_URL=https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
 
 Deploy.
 
-Obtendrás una URL tipo:
+Obtendrás una URL como:
 
-    https://mi-bot.workers.dev
+    https://mi-worker.workers.dev
 
 ------------------------------------------------------------------------
 
 ## 🔗 Paso 4 -- Setear el webhook (desde Apps Script)
+
+### Script Property adicional
+
+    WORKER_URL=https://mi-worker.workers.dev
+
+### Función para setear el webhook
 
 ``` js
 function setWebhookToWorker_() {
@@ -183,7 +215,7 @@ function setWebhookToWorker_() {
       contentType: "application/json",
       payload: JSON.stringify({
         url: workerUrl,
-        drop_pending_updates: true,
+        drop_pending_updates: true
       }),
     }
   );
@@ -192,20 +224,20 @@ function setWebhookToWorker_() {
 }
 ```
 
-Script Property adicional:
+### Ejecutar (orden recomendado)
 
-    WORKER_URL=https://mi-bot.workers.dev
+1.  `setup()` (si existe)
+2.  `setWebhookToWorker_()`
+3.  `getWebhookInfo_()` (verificación)
 
 ------------------------------------------------------------------------
 
-## ✅ Verificación
+## ✅ Verificación final
 
--   Ejecuta `getWebhookInfo`
--   Debe mostrar la URL del Worker
--   Prueba en Telegram:
-    -   `/help`
-    -   `/status`
-    -   `/diario`
+En Telegram probar varias veces: - `/help` - `/status` - `/diario` -
+`/pomodoro start`
+
+El bot **no debe caerse**.
 
 ------------------------------------------------------------------------
 
@@ -218,39 +250,32 @@ Script Property adicional:
 
 ------------------------------------------------------------------------
 
-## 📦 Persistencia (Google Sheets)
+## 🧠 Aprendizajes clave
 
-Hojas típicas: - `Daily` - `Checkins` - `Pomodoro`
-
-Se crean automáticamente si no existen.
+-   Apps Script **no es confiable como webhook directo**
+-   Telegram **rechaza redirects**
+-   Un proxy simple soluciona el 100% de los problemas
+-   Responder `200 OK` siempre es crítico
+-   Cloudflare Workers Free es suficiente
 
 ------------------------------------------------------------------------
 
-## 🧠 Ideas para extender
+## 🚀 Ideas para extender
 
--   Autenticación por chat
--   Múltiples usuarios
+-   Multiusuario
+-   Autenticación
 -   Resúmenes semanales
--   Exportación CSV
 -   IA para feedback reflexivo
--   Web UI
-
-------------------------------------------------------------------------
-
-## 🧩 Aprendizajes clave
-
--   Apps Script **no es un webhook confiable directo**
--   Telegram **no acepta redirects**
--   Un proxy (Worker) simplifica todo
--   Responder **200 OK siempre** es clave
+-   Dashboard web
+-   Exportaciones CSV
 
 ------------------------------------------------------------------------
 
 ## 📜 Licencia
 
-Uso libre para aprendizaje y proyectos personales.\
-Si lo usas en producción o divulgación, menciona la idea original 🙌
+Uso libre para aprendizaje y divulgación. Si lo usas en producción o
+enseñanza, menciona la idea original 🙌
 
 ------------------------------------------------------------------------
 
-Hecho con ❤️, foco y muchas horas de debugging.
+Hecho con ❤️, foco y debugging real.

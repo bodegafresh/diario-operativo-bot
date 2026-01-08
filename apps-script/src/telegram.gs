@@ -1,10 +1,38 @@
 /**
- * telegram.gs
- * Webhook + router + envío Telegram
+ * telegram.gs (versión mejorada)
+ * - Seguridad: uso personal (solo 1 chat permitido) + solo chat privado
+ * - (Opcional) valida secret token del webhook si lo configuras
+ * - No expone chat_id en /status
+ *
+ * Reusa tu property CHAT_ID como ALLOWED_CHAT_ID (single-user).
+ *  - Si CHAT_ID está vacío: lo “aprende” en el primer mensaje privado
+ *  - Si alguien más escribe: se ignora silenciosamente
  */
+
+// Opcional: si usas secret_token en setWebhook (recomendado), setea esta property
+// TG_WEBHOOK_SECRET = "cadena_larga_random"
+// y pásala en setWebhookToWorker_ (más abajo) con secret_token.
+const TG_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 
 function doPost(e) {
   try {
+    // (Opcional PRO) Validación webhook secret token
+    const expectedSecret = cfgGet_("TG_WEBHOOK_SECRET", "");
+    if (expectedSecret) {
+      const got =
+        (e &&
+          e.headers &&
+          (e.headers[TG_SECRET_HEADER] ||
+            e.headers[TG_SECRET_HEADER.toLowerCase()])) ||
+        "";
+      if (String(got) !== String(expectedSecret)) {
+        // Respuesta 200 igual para no dar señales
+        return ContentService.createTextOutput("ok").setMimeType(
+          ContentService.MimeType.TEXT
+        );
+      }
+    }
+
     const update = JSON.parse((e && e.postData && e.postData.contents) || "{}");
 
     if (update.update_id != null && !shouldProcessUpdate_(update.update_id)) {
@@ -21,15 +49,31 @@ function doPost(e) {
   );
 }
 
+function doGet(e) {
+  return ContentService.createTextOutput("ok").setMimeType(
+    ContentService.MimeType.TEXT
+  );
+}
+
+/**
+ * Seguridad:
+ * - Solo chats privados (evita grupos)
+ * - Solo 1 chat permitido (property CHAT_ID)
+ *   - si no existe, se fija al primer chat privado que escriba
+ *   - el resto se ignora sin responder
+ */
 function handleMessage_(msg) {
   const chatId = msg && msg.chat && msg.chat.id ? String(msg.chat.id) : "";
   const text = msg && msg.text ? String(msg.text).trim() : "";
   if (!chatId || !text) return;
 
-  // aprende chat_id
-  if (!getChatId_() || getChatId_() !== chatId) setChatId_(chatId);
+  // 1) Solo privado (bloquea grupos/canales)
+  if (!isPrivateChat_(msg)) return;
 
-  // asegura triggers base al primer contacto
+  // 2) Single-user: usa CHAT_ID como allowlist
+  if (!authorizeOrLearnChat_(chatId)) return;
+
+  // 3) asegura triggers base al primer contacto autorizado
   ensureBaseAutomation_();
 
   if (text.startsWith("/")) {
@@ -70,12 +114,37 @@ function handleMessage_(msg) {
     return;
   }
 
-  // fallback
   tgSend_(
     chatId,
     "Te leo. Usa /diario o responde a un check-in 🙂",
     msg.message_id
   );
+}
+
+/** --- Seguridad helpers --- */
+function isPrivateChat_(msg) {
+  // Telegram: "private" | "group" | "supergroup" | "channel"
+  const t = msg && msg.chat && msg.chat.type ? String(msg.chat.type) : "";
+  return t === "private";
+}
+
+function authorizeOrLearnChat_(chatId) {
+  // Reutiliza tu property CHAT_ID como ALLOWED_CHAT_ID
+  // (No cambiamos helpers existentes: getChatId_/setChatId_).
+  const allowed = getChatId_();
+
+  // Si no hay allowed todavía, lo fija al primer chat privado que hable.
+  if (!allowed) {
+    setChatId_(chatId);
+    return true;
+  }
+
+  // Si existe, solo ese chat puede usar el bot.
+  if (String(allowed) !== String(chatId)) {
+    // Silencioso: no responder, no loggear
+    return false;
+  }
+  return true;
 }
 
 /** Telegram sendMessage */
@@ -98,6 +167,31 @@ function tgSend_(chatId, text, replyToMessageId) {
   }
 }
 
+function tgSendSafe_(chatId, text, replyToMessageId) {
+  const s = String(text || "");
+  const MAX = 3500; // margen bajo 4096
+
+  if (s.length <= MAX) {
+    return tgSend_(chatId, s, replyToMessageId);
+  }
+
+  const lines = s.split("\n");
+  let buf = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if ((buf + "\n" + line).length > MAX) {
+      tgSend_(chatId, buf, replyToMessageId);
+      replyToMessageId = null; // solo el primer chunk como reply
+      buf = line;
+    } else {
+      buf = buf ? buf + "\n" + line : line;
+    }
+  }
+  if (buf) tgSend_(chatId, buf, replyToMessageId);
+}
+
+/** --- Prompts / help --- */
 function helpShort_() {
   return [
     "Comandos:",
@@ -124,20 +218,26 @@ function helpLong_() {
 }
 
 function status_() {
-  const cid = getChatId_() || "(no aprendido aún)";
+  // Seguridad: NO mostramos chat_id
+  const allowedSet = !!getChatId_();
   const pomo = cfgGet_(PROP.POMO_ENABLED, "false") === "true";
   const ck = cfgGet_(PROP.CHECKINS_SETUP, "false") === "true";
   const dr = cfgGet_(PROP.DIARY_REMINDER_SETUP, "false") === "true";
 
   return [
     "Estado:",
-    "chat_id: " + cid,
+    "auth: " +
+      (allowedSet
+        ? "single-user (CHAT_ID fijado)"
+        : "pendiente (escríbele al bot 1 vez)"),
+    "chat: private-only",
     "checkins: " + (ck ? "ON" : "OFF"),
     "diario reminder: " + (dr ? "ON" : "OFF"),
     "pomodoro: " + (pomo ? "ON" : "OFF"),
   ].join("\n");
 }
 
+/** --- Router de comandos --- */
 function handleCommand_(chatId, messageId, text) {
   const parts = text.split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
@@ -184,26 +284,7 @@ function handleCommand_(chatId, messageId, text) {
   tgSend_(chatId, "Comando no reconocido. Usa /help.", messageId);
 }
 
-/** Webhook helper */
-function setWebhook() {
-  let webAppUrl = cfgGet_("WEBAPP_URL", "");
-  if (!webAppUrl) throw new Error("Falta WEBAPP_URL en Script Properties.");
-
-  // fuerza /exec
-  if (!/\/exec(\?.*)?$/.test(webAppUrl)) {
-    webAppUrl = webAppUrl.replace(/\/$/, "") + "/exec";
-  }
-
-  const url =
-    "https://api.telegram.org/bot" +
-    getBotToken_() +
-    "/setWebhook?url=" +
-    encodeURIComponent(webAppUrl);
-
-  Logger.log(UrlFetchApp.fetch(url).getContentText());
-  setWebhookSmart_();
-}
-
+/** --- Update dedupe --- */
 function shouldProcessUpdate_(updateId) {
   const props = PropertiesService.getScriptProperties();
   const lastRaw = props.getProperty(PROP.LAST_UPDATE_ID);
@@ -224,42 +305,29 @@ function shouldProcessUpdate_(updateId) {
   return true;
 }
 
-function tgSendSafe_(chatId, text, replyToMessageId) {
-  const s = String(text || "");
-  const MAX = 3500; // margen bajo 4096
+/** --- Webhook helpers --- */
+function setWebhook() {
+  let webAppUrl = cfgGet_("WEBAPP_URL", "");
+  if (!webAppUrl) throw new Error("Falta WEBAPP_URL en Script Properties.");
 
-  if (s.length <= MAX) {
-    return tgSend_(chatId, s, replyToMessageId);
+  if (!/\/exec(\?.*)?$/.test(webAppUrl)) {
+    webAppUrl = webAppUrl.replace(/\/$/, "") + "/exec";
   }
 
-  // Parte por líneas para no romper el formato
-  const lines = s.split("\n");
-  let buf = "";
+  const url =
+    "https://api.telegram.org/bot" +
+    getBotToken_() +
+    "/setWebhook?url=" +
+    encodeURIComponent(webAppUrl);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if ((buf + "\n" + line).length > MAX) {
-      tgSend_(chatId, buf, replyToMessageId);
-      replyToMessageId = null; // solo el primer chunk como reply
-      buf = line;
-    } else {
-      buf = buf ? buf + "\n" + line : line;
-    }
-  }
-  if (buf) tgSend_(chatId, buf, replyToMessageId);
-}
-
-function doGet(e) {
-  return ContentService.createTextOutput("ok").setMimeType(
-    ContentService.MimeType.TEXT
-  );
+  Logger.log(UrlFetchApp.fetch(url).getContentText());
+  setWebhookSmart_();
 }
 
 function setWebhookSmart_() {
   const execUrl = normalizeExecUrl_(cfgGet_("WEBAPP_URL", ""));
   if (!execUrl) throw new Error("Falta WEBAPP_URL en Script Properties.");
 
-  // 1) Descubre el URL final (sin seguir redirect)
   const res = UrlFetchApp.fetch(execUrl, {
     method: "get",
     followRedirects: false,
@@ -268,7 +336,6 @@ function setWebhookSmart_() {
 
   let hookUrl = execUrl;
 
-  // 2) Si Google responde 302, usa el Location (googleusercontent)
   if (res.getResponseCode() === 302) {
     const loc = res.getHeaders()["Location"] || res.getAllHeaders()?.Location;
     if (!loc)
@@ -276,7 +343,6 @@ function setWebhookSmart_() {
     hookUrl = String(loc);
   }
 
-  // 3) Set webhook a ese URL (debe responder 200 directo, sin redirects)
   const setUrl =
     "https://api.telegram.org/bot" + getBotToken_() + "/setWebhook";
   const setRes = UrlFetchApp.fetch(setUrl, {
@@ -286,7 +352,6 @@ function setWebhookSmart_() {
     muteHttpExceptions: true,
   });
 
-  // 4) Guarda el webhook efectivo
   PropertiesService.getScriptProperties().setProperty(
     "WEBHOOK_URL_EFFECTIVE",
     hookUrl
@@ -301,30 +366,36 @@ function normalizeExecUrl_(url) {
   url = String(url || "").trim();
   if (!url) return "";
   if (!/\/exec(\?.*)?$/.test(url)) url = url.replace(/\/$/, "") + "/exec";
-  if (url.includes("/macros/library/"))
+  if (url.includes("/macros/library/")) {
     throw new Error(
       "WEBAPP_URL apunta a /macros/library/. Debe ser /macros/s/.../exec"
     );
+  }
   return url;
 }
 
+/**
+ * ✅ Recomendado: Setea el webhook al Cloudflare Worker.
+ * (Opcional PRO) si setéas TG_WEBHOOK_SECRET, lo enviamos como secret_token.
+ */
 function setWebhookToWorker_() {
   const workerUrl =
     PropertiesService.getScriptProperties().getProperty("WORKER_URL");
+  if (!workerUrl) throw new Error("Falta WORKER_URL en Script Properties");
 
-  if (!workerUrl) {
-    throw new Error("Falta WORKER_URL en Script Properties");
-  }
+  const payload = {
+    url: workerUrl,
+    drop_pending_updates: true,
+  };
+
+  const secret = cfgGet_("TG_WEBHOOK_SECRET", "");
+  if (secret) payload.secret_token = secret; // Telegram enviará header en cada update
 
   const url = "https://api.telegram.org/bot" + getBotToken_() + "/setWebhook";
-
   const res = UrlFetchApp.fetch(url, {
     method: "post",
     contentType: "application/json",
-    payload: JSON.stringify({
-      url: workerUrl,
-      drop_pending_updates: true,
-    }),
+    payload: JSON.stringify(payload),
     muteHttpExceptions: true,
   });
 

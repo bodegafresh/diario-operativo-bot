@@ -4,32 +4,21 @@
  */
 
 function doPost(e) {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(20000)) return ContentService.createTextOutput("busy");
-
   try {
-    const update = JSON.parse(
-      e && e.postData && e.postData.contents ? e.postData.contents : "{}"
-    );
+    const update = JSON.parse((e && e.postData && e.postData.contents) || "{}");
 
-    // Dedupe por update_id (Telegram reintenta)
-    if (update && update.update_id != null) {
-      const last = toInt_(cfgGet_(PROP.LAST_UPDATE_ID, ""));
-      if (last != null && update.update_id <= last) {
-        return ContentService.createTextOutput("ok");
-      }
-      cfgSet_(PROP.LAST_UPDATE_ID, String(update.update_id));
+    if (update.update_id != null && !shouldProcessUpdate_(update.update_id)) {
+      return ContentService.createTextOutput("ok");
     }
 
     if (update.message) handleMessage_(update.message);
-    return ContentService.createTextOutput("ok");
   } catch (err) {
-    // No spamear usuario en caso de error (solo logs)
     console.error(err);
-    return ContentService.createTextOutput("error");
-  } finally {
-    lock.releaseLock();
   }
+
+  return ContentService.createTextOutput("ok").setMimeType(
+    ContentService.MimeType.TEXT
+  );
 }
 
 function handleMessage_(msg) {
@@ -165,7 +154,7 @@ function handleCommand_(chatId, messageId, text) {
   }
 
   if (cmd === "/diario") {
-    tgSend_(chatId, diaryPrompt_(), messageId);
+    tgSendSafe_(chatId, diaryPrompt_(), messageId);
     return;
   }
 
@@ -197,15 +186,151 @@ function handleCommand_(chatId, messageId, text) {
 
 /** Webhook helper */
 function setWebhook() {
-  const webAppUrl = cfgGet_("WEBAPP_URL", "");
-  if (!webAppUrl)
-    throw new Error(
-      "Setea WEBAPP_URL en Script Properties (URL /exec del deploy)."
-    );
+  let webAppUrl = cfgGet_("WEBAPP_URL", "");
+  if (!webAppUrl) throw new Error("Falta WEBAPP_URL en Script Properties.");
+
+  // fuerza /exec
+  if (!/\/exec(\?.*)?$/.test(webAppUrl)) {
+    webAppUrl = webAppUrl.replace(/\/$/, "") + "/exec";
+  }
+
   const url =
     "https://api.telegram.org/bot" +
     getBotToken_() +
     "/setWebhook?url=" +
     encodeURIComponent(webAppUrl);
+
   Logger.log(UrlFetchApp.fetch(url).getContentText());
+  setWebhookSmart_();
+}
+
+function shouldProcessUpdate_(updateId) {
+  const props = PropertiesService.getScriptProperties();
+  const lastRaw = props.getProperty(PROP.LAST_UPDATE_ID);
+  const last = lastRaw ? Number(lastRaw) : 0;
+  const cur = Number(updateId);
+
+  if (!isFinite(cur) || cur <= 0) return true;
+
+  // Si alguien guardó Date.now() u otro gigante, resetea
+  if (last > 5000000000) {
+    props.setProperty(PROP.LAST_UPDATE_ID, String(cur));
+    return true;
+  }
+
+  if (last && cur <= last) return false;
+
+  props.setProperty(PROP.LAST_UPDATE_ID, String(cur));
+  return true;
+}
+
+function tgSendSafe_(chatId, text, replyToMessageId) {
+  const s = String(text || "");
+  const MAX = 3500; // margen bajo 4096
+
+  if (s.length <= MAX) {
+    return tgSend_(chatId, s, replyToMessageId);
+  }
+
+  // Parte por líneas para no romper el formato
+  const lines = s.split("\n");
+  let buf = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if ((buf + "\n" + line).length > MAX) {
+      tgSend_(chatId, buf, replyToMessageId);
+      replyToMessageId = null; // solo el primer chunk como reply
+      buf = line;
+    } else {
+      buf = buf ? buf + "\n" + line : line;
+    }
+  }
+  if (buf) tgSend_(chatId, buf, replyToMessageId);
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput("ok").setMimeType(
+    ContentService.MimeType.TEXT
+  );
+}
+
+function setWebhookSmart_() {
+  const execUrl = normalizeExecUrl_(cfgGet_("WEBAPP_URL", ""));
+  if (!execUrl) throw new Error("Falta WEBAPP_URL en Script Properties.");
+
+  // 1) Descubre el URL final (sin seguir redirect)
+  const res = UrlFetchApp.fetch(execUrl, {
+    method: "get",
+    followRedirects: false,
+    muteHttpExceptions: true,
+  });
+
+  let hookUrl = execUrl;
+
+  // 2) Si Google responde 302, usa el Location (googleusercontent)
+  if (res.getResponseCode() === 302) {
+    const loc = res.getHeaders()["Location"] || res.getAllHeaders()?.Location;
+    if (!loc)
+      throw new Error("302 sin Location. No puedo derivar webhook final.");
+    hookUrl = String(loc);
+  }
+
+  // 3) Set webhook a ese URL (debe responder 200 directo, sin redirects)
+  const setUrl =
+    "https://api.telegram.org/bot" + getBotToken_() + "/setWebhook";
+  const setRes = UrlFetchApp.fetch(setUrl, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify({ url: hookUrl, drop_pending_updates: true }),
+    muteHttpExceptions: true,
+  });
+
+  // 4) Guarda el webhook efectivo
+  PropertiesService.getScriptProperties().setProperty(
+    "WEBHOOK_URL_EFFECTIVE",
+    hookUrl
+  );
+
+  Logger.log("execUrl=" + execUrl);
+  Logger.log("hookUrl=" + hookUrl);
+  Logger.log("setWebhook=" + setRes.getContentText());
+}
+
+function normalizeExecUrl_(url) {
+  url = String(url || "").trim();
+  if (!url) return "";
+  if (!/\/exec(\?.*)?$/.test(url)) url = url.replace(/\/$/, "") + "/exec";
+  if (url.includes("/macros/library/"))
+    throw new Error(
+      "WEBAPP_URL apunta a /macros/library/. Debe ser /macros/s/.../exec"
+    );
+  return url;
+}
+
+function setWebhookToWorker_() {
+  const workerUrl =
+    PropertiesService.getScriptProperties().getProperty("WORKER_URL");
+
+  if (!workerUrl) {
+    throw new Error("Falta WORKER_URL en Script Properties");
+  }
+
+  const url = "https://api.telegram.org/bot" + getBotToken_() + "/setWebhook";
+
+  const res = UrlFetchApp.fetch(url, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify({
+      url: workerUrl,
+      drop_pending_updates: true,
+    }),
+    muteHttpExceptions: true,
+  });
+
+  Logger.log(res.getContentText());
+}
+
+function run_setWebhookToWorker() {
+  setWebhookToWorker_();
 }

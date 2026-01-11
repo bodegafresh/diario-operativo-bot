@@ -21,6 +21,7 @@
     .kpi{display:flex;gap:16px;flex-wrap:wrap}
     .kpi .pill{padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);}
     .img{max-width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.10);}
+    .badge{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);}
   </style>
 </head>
 <body>
@@ -37,6 +38,17 @@
 
     <div class="card">
       <div style="font-weight:800;margin-bottom:10px">Accesos rápidos</div>
+
+      {% if weekly and weekly|length > 0 %}
+        <div class="badge" style="margin-bottom:12px">
+          <span style="font-weight:800">Semana actual:</span>
+          <span>{{ weekly[-1].week }}</span>
+          <span>·</span>
+          <span style="font-weight:800">{{ weekly[-1].status }}</span>
+          <span class="muted">(avg {{ (weekly[-1].score_avg or 0) | round(2) }})</span>
+        </div>
+      {% endif %}
+
       <div class="kpi">
         {% for w in weekly %}
           <div class="pill"><a href="weekly_{{ w.week }}.html">{{ w.week }}</a></div>
@@ -56,7 +68,17 @@
     <table>
       <thead>
         <tr>
-          <th>date</th><th>score</th><th>energy</th><th>sleep</th><th>pomo_min</th><th>focus_min</th><th>alcohol_units</th><th>stalk_intensity</th><th>feature_done</th>
+          <th>date</th>
+          <th>score</th>
+          <th>energy</th>
+          <th>sleep</th>
+          <th>pomo_min</th>
+          <th>focus_min</th>
+          <th>alcohol_units</th>
+          <th>stalk</th>
+          <th>stalk_level</th>
+          <th>stalk_intensity</th>
+          <th>feature_done</th>
         </tr>
       </thead>
       <tbody>
@@ -69,6 +91,8 @@
           <td>{{ r.pomodoro_minutes }}</td>
           <td>{{ r.focus_minutes }}</td>
           <td>{{ r.alcohol_units }}</td>
+          <td>{{ r.stalk_occurred }}</td>
+          <td>{{ r.stalk_intensity_label }}</td>
           <td>{{ r.stalk_intensity }}</td>
           <td>{{ r.feature_done }}</td>
         </tr>
@@ -82,17 +106,27 @@
       <div style="font-weight:800;margin-bottom:10px">Resumen semanal</div>
       <table>
         <thead><tr>
-          <th>week</th><th>days</th><th>score_avg</th><th>pomo_min</th><th>focus_min</th><th>alcohol</th><th>stalk_avg</th>
+          <th>week</th>
+          <th>status</th>
+          <th>days</th>
+          <th>score_avg</th>
+          <th>pomo_min</th>
+          <th>focus_min</th>
+          <th>alcohol</th>
+          <th>stalk_days</th>
+          <th>stalk_avg</th>
         </tr></thead>
         <tbody>
         {% for r in weekly %}
           <tr>
             <td><a href="weekly_{{ r.week }}.html">{{ r.week }}</a></td>
+            <td>{{ r.status }}</td>
             <td>{{ r.days }}</td>
             <td>{{ (r.score_avg or 0) | round(2) }}</td>
             <td>{{ r.pomodoro_min }}</td>
             <td>{{ r.focus_min }}</td>
             <td>{{ r.alcohol_units }}</td>
+            <td>{{ r.stalk_days }}</td>
             <td>{{ (r.stalk_intensity_avg or 0) | round(2) }}</td>
           </tr>
         {% endfor %}
@@ -104,7 +138,14 @@
       <div style="font-weight:800;margin-bottom:10px">Resumen mensual</div>
       <table>
         <thead><tr>
-          <th>month</th><th>days</th><th>score_avg</th><th>pomo_min</th><th>focus_min</th><th>alcohol</th><th>stalk_avg</th>
+          <th>month</th>
+          <th>days</th>
+          <th>score_avg</th>
+          <th>pomo_min</th>
+          <th>focus_min</th>
+          <th>alcohol</th>
+          <th>stalk_days</th>
+          <th>stalk_avg</th>
         </tr></thead>
         <tbody>
         {% for r in monthly %}
@@ -115,6 +156,7 @@
             <td>{{ r.pomodoro_min }}</td>
             <td>{{ r.focus_min }}</td>
             <td>{{ r.alcohol_units }}</td>
+            <td>{{ r.stalk_days }}</td>
             <td>{{ (r.stalk_intensity_avg or 0) | round(2) }}</td>
           </tr>
         {% endfor %}

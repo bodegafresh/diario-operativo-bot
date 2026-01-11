@@ -7,28 +7,69 @@ from typing import Optional
 import os
 import pandas as pd
 
+
 @dataclass
 class DataBundle:
     daily: pd.DataFrame
     checkins: pd.DataFrame
     pomodoro: pd.DataFrame
 
+
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize column names to avoid subtle issues from Google Sheets:
+    - strips spaces
+    - lowercases
+    - replaces spaces with underscores
+    - removes BOM if present
+    """
+    df = df.copy()
+    df.columns = [
+        str(c)
+        .replace("\ufeff", "")          # BOM
+        .strip()
+        .lower()
+        .replace(" ", "_")
+        for c in df.columns
+    ]
+    return df
+
+
+def _empty_to_na(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert empty strings to NA for consistent downstream parsing.
+    """
+    df = df.copy()
+    df = df.replace({"": pd.NA, " ": pd.NA})
+    return df
+
+
 def _read_excel(excel_path: str | Path) -> DataBundle:
     path = Path(excel_path)
     if not path.exists():
         raise FileNotFoundError(f"Excel not found: {path.resolve()}")
+
     daily = pd.read_excel(path, sheet_name="Daily")
     checkins = pd.read_excel(path, sheet_name="Checkins")
     pomodoro = pd.read_excel(path, sheet_name="Pomodoro")
+
+    daily = _empty_to_na(_normalize_columns(daily))
+    checkins = _empty_to_na(_normalize_columns(checkins))
+    pomodoro = _empty_to_na(_normalize_columns(pomodoro))
+
     return DataBundle(daily=daily, checkins=checkins, pomodoro=pomodoro)
+
 
 def _ws_to_df(ws) -> pd.DataFrame:
     """
     Reads a worksheet into a DataFrame.
-    Assumes first row are headers (as in Sheets exported tables).
+    Assumes first row are headers.
     """
     records = ws.get_all_records(default_blank="", head=1)
-    return pd.DataFrame(records)
+    df = pd.DataFrame(records)
+    df = _empty_to_na(_normalize_columns(df))
+    return df
+
 
 def _read_sheets(
     spreadsheet_id: Optional[str] = None,
@@ -55,6 +96,7 @@ def _read_sheets(
         raise ValueError("Missing spreadsheet_id. Set GOOGLE_SHEETS_SPREADSHEET_ID or pass explicitly.")
     if not creds_path:
         raise ValueError("Missing creds_path. Set GOOGLE_APPLICATION_CREDENTIALS or pass explicitly.")
+
     creds_file = Path(creds_path)
     if not creds_file.exists():
         raise FileNotFoundError(f"Service account JSON not found: {creds_file.resolve()}")
@@ -80,6 +122,7 @@ def _read_sheets(
     pomodoro = _ws_to_df(pomodoro_ws)
 
     return DataBundle(daily=daily, checkins=checkins, pomodoro=pomodoro)
+
 
 def load_data(
     source: str,

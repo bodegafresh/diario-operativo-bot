@@ -94,25 +94,3 @@ function sendCheckin_() {
   const q = pickRandom_(CHECKIN_PROMPTS);
   tgSend_(chatId, checkinMessage_(q));
 }
-
-function debugTriggers_() {
-  const ts = ScriptApp.getProjectTriggers().map((t) => ({
-    handler: t.getHandlerFunction(),
-    type: String(t.getEventType()),
-    id: t.getUniqueId && t.getUniqueId(),
-  }));
-  Logger.log(JSON.stringify(ts, null, 2));
-}
-
-function debugScheduleCheckinsNow_() {
-  scheduleDailyCheckins_();
-  debugTriggers_();
-}
-
-function debugSendCheckinNow_() {
-  sendCheckin_();
-}
-
-function run_debugSendCheckinNow() {
-  debugSendCheckinNow_();
-}

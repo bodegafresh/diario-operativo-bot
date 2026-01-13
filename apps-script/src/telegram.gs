@@ -1,32 +1,24 @@
 /**
- * telegram.gs (versión mejorada)
- * - Seguridad: uso personal (solo 1 chat permitido) + solo chat privado
- * - (Opcional) valida secret token del webhook si lo configuras
- * - No expone chat_id en /status
- *
- * Reusa tu property CHAT_ID como ALLOWED_CHAT_ID (single-user).
- *  - Si CHAT_ID está vacío: lo “aprende” en el primer mensaje privado
- *  - Si alguien más escribe: se ignora silenciosamente
+ * telegram.gs
+ * - Webhook router
+ * - Seguridad: chat privado + single-user (CHAT_ID)
+ * - Reply handlers: DIARIO, CHECK-IN, COACH-CHECK
+ * - Comandos: /help /status /diario /pomodoro + coach v2 (/coach, /nivel, /entreno, /plan)
  */
 
-// Opcional: si usas secret_token en setWebhook (recomendado), setea esta property
-// TG_WEBHOOK_SECRET = "cadena_larga_random"
-// y pásala en setWebhookToWorker_ (más abajo) con secret_token.
 const TG_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 
 function doPost(e) {
   try {
-    // (Opcional PRO) Validación webhook secret token
-    const expectedSecret = cfgGet_("TG_WEBHOOK_SECRET", "");
+    const expectedSecret = cfgGet_(PROP.TG_WEBHOOK_SECRET, "");
     if (expectedSecret) {
       const got =
         (e &&
           e.headers &&
           (e.headers[TG_SECRET_HEADER] ||
-            e.headers[TG_SECRET_HEADER.toLowerCase()])) ||
+            e.headers[String(TG_SECRET_HEADER).toLowerCase()])) ||
         "";
-      if (String(got) !== String(expectedSecret)) {
-        // Respuesta 200 igual para no dar señales
+      if (got && String(got) !== String(expectedSecret)) {
         return ContentService.createTextOutput("ok").setMimeType(
           ContentService.MimeType.TEXT
         );
@@ -55,25 +47,15 @@ function doGet(e) {
   );
 }
 
-/**
- * Seguridad:
- * - Solo chats privados (evita grupos)
- * - Solo 1 chat permitido (property CHAT_ID)
- *   - si no existe, se fija al primer chat privado que escriba
- *   - el resto se ignora sin responder
- */
 function handleMessage_(msg) {
   const chatId = msg && msg.chat && msg.chat.id ? String(msg.chat.id) : "";
   const text = msg && msg.text ? String(msg.text).trim() : "";
   if (!chatId || !text) return;
 
-  // 1) Solo privado (bloquea grupos/canales)
   if (!isPrivateChat_(msg)) return;
-
-  // 2) Single-user: usa CHAT_ID como allowlist
   if (!authorizeOrLearnChat_(chatId)) return;
 
-  // 3) asegura triggers base al primer contacto autorizado
+  // asegura triggers base al primer contacto autorizado
   ensureBaseAutomation_();
 
   if (text.startsWith("/")) {
@@ -81,11 +63,9 @@ function handleMessage_(msg) {
     return;
   }
 
-  // respuestas (reply) a prompts del bot
   const reply = msg.reply_to_message;
   const repliedToBot = !!(reply && reply.from && reply.from.is_bot);
   if (!repliedToBot) {
-    // no spam: una sola ayuda corta
     tgSend_(chatId, helpShort_(), msg.message_id);
     return;
   }
@@ -114,43 +94,61 @@ function handleMessage_(msg) {
     return;
   }
 
-  tgSend_(
-    chatId,
-    "Te leo. Usa /diario o responde a un check-in 🙂",
-    msg.message_id
-  );
+  if (prompt.indexOf("[COACH-CHECK]") !== -1) {
+    const parsed = parseCoachCheckAnswer_(text);
+    if (!parsed) {
+      tgSend_(
+        chatId,
+        "Formato inválido. Responde: si si si si si si no (entreno lectura voz ingles story ritual alcohol)",
+        msg.message_id
+      );
+      return;
+    }
+
+    const result = coachApplyNightResult_(parsed);
+
+    if (result.action === "reset") {
+      const why =
+        result.reason === "alcohol" ? "por alcohol" : "por cumplimiento";
+      tgSend_(
+        chatId,
+        `🔁 Reinicio del ciclo 21 días (${why}).\nSin castigo. Sin culpa.\nMañana vuelves a Día 1 con foco liviano.`,
+        msg.message_id
+      );
+      return;
+    }
+
+    const badge = result.tier === "valid" ? "✅" : "⚠️";
+    tgSend_(
+      chatId,
+      `${badge} Cierre registrado. Score=${result.score}/6.\nMañana: día ${result.next21}/21 | Entreno día ${result.next14}/14`,
+      msg.message_id
+    );
+    return;
+  }
+
+  tgSend_(chatId, "Te leo. Usa /diario, /plan o /coach 🙂", msg.message_id);
 }
 
 /** --- Seguridad helpers --- */
 function isPrivateChat_(msg) {
-  // Telegram: "private" | "group" | "supergroup" | "channel"
   const t = msg && msg.chat && msg.chat.type ? String(msg.chat.type) : "";
   return t === "private";
 }
 
 function authorizeOrLearnChat_(chatId) {
-  // Reutiliza tu property CHAT_ID como ALLOWED_CHAT_ID
-  // (No cambiamos helpers existentes: getChatId_/setChatId_).
   const allowed = getChatId_();
-
-  // Si no hay allowed todavía, lo fija al primer chat privado que hable.
   if (!allowed) {
     setChatId_(chatId);
     return true;
   }
-
-  // Si existe, solo ese chat puede usar el bot.
-  if (String(allowed) !== String(chatId)) {
-    // Silencioso: no responder, no loggear
-    return false;
-  }
-  return true;
+  return String(allowed) === String(chatId);
 }
 
 /** Telegram sendMessage */
 function tgSend_(chatId, text, replyToMessageId) {
   const url = "https://api.telegram.org/bot" + getBotToken_() + "/sendMessage";
-  const payload = { chat_id: chatId, text: text };
+  const payload = { chat_id: chatId, text: String(text || "") };
   if (replyToMessageId) payload.reply_to_message_id = replyToMessageId;
 
   const res = UrlFetchApp.fetch(url, {
@@ -161,19 +159,26 @@ function tgSend_(chatId, text, replyToMessageId) {
   });
 
   const code = res.getResponseCode();
+  const body = res.getContentText();
+
   if (code >= 300) {
-    console.error(res.getContentText());
+    console.error(body);
     throw new Error("Telegram error " + code);
+  }
+
+  try {
+    const j = JSON.parse(body);
+    return j && j.result && j.result.message_id ? j.result.message_id : null;
+  } catch (_) {
+    return null;
   }
 }
 
 function tgSendSafe_(chatId, text, replyToMessageId) {
   const s = String(text || "");
-  const MAX = 3500; // margen bajo 4096
+  const MAX = 3500;
 
-  if (s.length <= MAX) {
-    return tgSend_(chatId, s, replyToMessageId);
-  }
+  if (s.length <= MAX) return tgSend_(chatId, s, replyToMessageId);
 
   const lines = s.split("\n");
   let buf = "";
@@ -182,7 +187,7 @@ function tgSendSafe_(chatId, text, replyToMessageId) {
     const line = lines[i];
     if ((buf + "\n" + line).length > MAX) {
       tgSend_(chatId, buf, replyToMessageId);
-      replyToMessageId = null; // solo el primer chunk como reply
+      replyToMessageId = null;
       buf = line;
     } else {
       buf = buf ? buf + "\n" + line : line;
@@ -191,12 +196,16 @@ function tgSendSafe_(chatId, text, replyToMessageId) {
   if (buf) tgSend_(chatId, buf, replyToMessageId);
 }
 
-/** --- Prompts / help --- */
+/** Help / status */
 function helpShort_() {
   return [
     "Comandos:",
     "/diario",
     "/pomodoro start | stop | status",
+    "/coach on | off | status | reset21",
+    "/nivel suave | estandar | desafiante",
+    "/plan",
+    "/entreno",
     "/status",
     "/help",
   ].join("\n");
@@ -208,40 +217,64 @@ function helpLong_() {
     "",
     "• /diario → registrar día (responde al template)",
     "• /pomodoro start|stop|status → 25/5 x4 + 15 (Lun–Vie 09–18 Chile)",
+    "• /coach on|off|status|reset21 → coach v2 (21 días + sprint + recordatorios)",
+    "• /nivel suave|estandar|desafiante → dificultad del coach",
+    "• /plan → envía el plan del día ahora",
+    "• /entreno → envía rutina A/B de hoy",
     "• /status → estado del sistema",
     "• /help → ayuda",
     "",
     "Automático:",
-    "• Recordatorio diario para llenar /diario",
-    "• 3 check-ins aleatorios diarios (06–22)",
+    "• Recordatorio diario para /diario",
+    "• 3 check-ins diarios (06–22)",
+    "• Coach: plan 08:30 + recordatorios 10:30/14:00/17:30/20:30 + check 22:30",
   ].join("\n");
 }
 
 function status_() {
-  // Seguridad: NO mostramos chat_id
-  const allowedSet = !!getChatId_();
   const pomo = cfgGet_(PROP.POMO_ENABLED, "false") === "true";
   const ck = cfgGet_(PROP.CHECKINS_SETUP, "false") === "true";
   const dr = cfgGet_(PROP.DIARY_REMINDER_SETUP, "false") === "true";
+  const coachTriggers = cfgGet_(PROP.COACH_SETUP, "false") === "true";
+  const auth = !!getChatId_();
+
+  const coachMode =
+    typeof coachEnabled_ === "function" ? coachEnabled_() : false;
 
   return [
     "Estado:",
-    "auth: " +
-      (allowedSet
-        ? "single-user (CHAT_ID fijado)"
-        : "pendiente (escríbele al bot 1 vez)"),
+    "auth: " + (auth ? "single-user (CHAT_ID fijado)" : "pendiente"),
     "chat: private-only",
     "checkins: " + (ck ? "ON" : "OFF"),
     "diario reminder: " + (dr ? "ON" : "OFF"),
     "pomodoro: " + (pomo ? "ON" : "OFF"),
+    "coach triggers: " + (coachTriggers ? "OK" : "OFF"),
+    "coach mode: " + (coachMode ? "ON" : "OFF"),
   ].join("\n");
 }
 
-/** --- Router de comandos --- */
+/** Router de comandos */
 function handleCommand_(chatId, messageId, text) {
   const parts = text.split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
   const arg = (parts[1] || "").toLowerCase();
+
+  // Coach v2 router
+  if (typeof coachHandleCommand_ === "function") {
+    try {
+      const handled = coachHandleCommand_(chatId, messageId, cmd, arg);
+      if (handled) return;
+    } catch (err) {
+      console.error(err);
+      tgSend_(
+        chatId,
+        "⚠️ Error en coach: " +
+          (err && err.message ? err.message : String(err)),
+        messageId
+      );
+      return;
+    }
+  }
 
   if (cmd === "/start" || cmd === "/help") {
     tgSend_(chatId, helpLong_(), messageId);
@@ -284,7 +317,7 @@ function handleCommand_(chatId, messageId, text) {
   tgSend_(chatId, "Comando no reconocido. Usa /help.", messageId);
 }
 
-/** --- Update dedupe --- */
+/** Update dedupe */
 function shouldProcessUpdate_(updateId) {
   const props = PropertiesService.getScriptProperties();
   const lastRaw = props.getProperty(PROP.LAST_UPDATE_ID);
@@ -293,7 +326,6 @@ function shouldProcessUpdate_(updateId) {
 
   if (!isFinite(cur) || cur <= 0) return true;
 
-  // Si alguien guardó Date.now() u otro gigante, resetea
   if (last > 5000000000) {
     props.setProperty(PROP.LAST_UPDATE_ID, String(cur));
     return true;
@@ -303,105 +335,4 @@ function shouldProcessUpdate_(updateId) {
 
   props.setProperty(PROP.LAST_UPDATE_ID, String(cur));
   return true;
-}
-
-/** --- Webhook helpers --- */
-function setWebhook() {
-  let webAppUrl = cfgGet_("WEBAPP_URL", "");
-  if (!webAppUrl) throw new Error("Falta WEBAPP_URL en Script Properties.");
-
-  if (!/\/exec(\?.*)?$/.test(webAppUrl)) {
-    webAppUrl = webAppUrl.replace(/\/$/, "") + "/exec";
-  }
-
-  const url =
-    "https://api.telegram.org/bot" +
-    getBotToken_() +
-    "/setWebhook?url=" +
-    encodeURIComponent(webAppUrl);
-
-  Logger.log(UrlFetchApp.fetch(url).getContentText());
-  setWebhookSmart_();
-}
-
-function setWebhookSmart_() {
-  const execUrl = normalizeExecUrl_(cfgGet_("WEBAPP_URL", ""));
-  if (!execUrl) throw new Error("Falta WEBAPP_URL en Script Properties.");
-
-  const res = UrlFetchApp.fetch(execUrl, {
-    method: "get",
-    followRedirects: false,
-    muteHttpExceptions: true,
-  });
-
-  let hookUrl = execUrl;
-
-  if (res.getResponseCode() === 302) {
-    const loc = res.getHeaders()["Location"] || res.getAllHeaders()?.Location;
-    if (!loc)
-      throw new Error("302 sin Location. No puedo derivar webhook final.");
-    hookUrl = String(loc);
-  }
-
-  const setUrl =
-    "https://api.telegram.org/bot" + getBotToken_() + "/setWebhook";
-  const setRes = UrlFetchApp.fetch(setUrl, {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify({ url: hookUrl, drop_pending_updates: true }),
-    muteHttpExceptions: true,
-  });
-
-  PropertiesService.getScriptProperties().setProperty(
-    "WEBHOOK_URL_EFFECTIVE",
-    hookUrl
-  );
-
-  Logger.log("execUrl=" + execUrl);
-  Logger.log("hookUrl=" + hookUrl);
-  Logger.log("setWebhook=" + setRes.getContentText());
-}
-
-function normalizeExecUrl_(url) {
-  url = String(url || "").trim();
-  if (!url) return "";
-  if (!/\/exec(\?.*)?$/.test(url)) url = url.replace(/\/$/, "") + "/exec";
-  if (url.includes("/macros/library/")) {
-    throw new Error(
-      "WEBAPP_URL apunta a /macros/library/. Debe ser /macros/s/.../exec"
-    );
-  }
-  return url;
-}
-
-/**
- * ✅ Recomendado: Setea el webhook al Cloudflare Worker.
- * (Opcional PRO) si setéas TG_WEBHOOK_SECRET, lo enviamos como secret_token.
- */
-function setWebhookToWorker_() {
-  const workerUrl =
-    PropertiesService.getScriptProperties().getProperty("WORKER_URL");
-  if (!workerUrl) throw new Error("Falta WORKER_URL en Script Properties");
-
-  const payload = {
-    url: workerUrl,
-    drop_pending_updates: true,
-  };
-
-  const secret = cfgGet_("TG_WEBHOOK_SECRET", "");
-  if (secret) payload.secret_token = secret; // Telegram enviará header en cada update
-
-  const url = "https://api.telegram.org/bot" + getBotToken_() + "/setWebhook";
-  const res = UrlFetchApp.fetch(url, {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
-  });
-
-  Logger.log(res.getContentText());
-}
-
-function run_setWebhookToWorker() {
-  setWebhookToWorker_();
 }

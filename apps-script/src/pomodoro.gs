@@ -47,7 +47,6 @@ function pomodoroTick_() {
 
   const now = new Date();
 
-  // Solo ventana laboral + weekdays
   if (!isWeekdayChile_(now)) return;
   if (!withinWindow_(now, DEFAULTS.POMO_START_H, 0, DEFAULTS.POMO_END_H, 0))
     return;
@@ -60,7 +59,6 @@ function pomodoroTick_() {
 
   const endMs = Number(cfgGet_(PROP.POMO_END_MS, "0"));
 
-  // Si no hay endMs, iniciamos fase actual (y notificamos una vez)
   if (!endMs) {
     setPhaseEndFromNow_(phase);
     notifyPomodoroPhase_(chatId, phase, cycle);
@@ -70,10 +68,8 @@ function pomodoroTick_() {
 
   if (Date.now() < endMs) return;
 
-  // Termina fase
   logPomodoro_("end", phase, cycle, { at: isoDateTime_(now) });
 
-  // Avanza
   const next = nextPomodoroPhase_(phase, cycle);
   phase = next.phase;
   cycle = next.cycle;
@@ -103,7 +99,7 @@ function nextPomodoroPhase_(phase, cycle) {
       phase: "work",
       cycle: Math.min(DEFAULTS.POMO_SET_SIZE, cycle + 1),
     };
-  return { phase: "work", cycle: 1 }; // long_break -> reinicia set
+  return { phase: "work", cycle: 1 };
 }
 
 function setPhaseEndFromNow_(phase) {

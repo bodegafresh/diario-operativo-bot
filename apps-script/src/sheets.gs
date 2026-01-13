@@ -18,6 +18,7 @@ function getOrCreateSheet_(name, headers) {
 }
 
 function ensureCoreSheets_() {
+  // Daily
   getOrCreateSheet_(SHEETS.DAILY, [
     "timestamp",
     "date",
@@ -44,6 +45,7 @@ function ensureCoreSheets_() {
     "raw",
   ]);
 
+  // Checkins
   getOrCreateSheet_(SHEETS.CHECKINS, [
     "timestamp",
     "date",
@@ -56,6 +58,7 @@ function ensureCoreSheets_() {
     "answer_raw",
   ]);
 
+  // Pomodoro
   getOrCreateSheet_(SHEETS.POMODORO, [
     "timestamp",
     "date",
@@ -64,6 +67,30 @@ function ensureCoreSheets_() {
     "cycle",
     "meta",
   ]);
+
+  // Coach V2 (una sola hoja)
+  getOrCreateSheet_(SHEETS.COACH, [
+    "timestamp",
+    "date",
+    "level",
+    "day21",
+    "week",
+    "train_day14",
+    "score_0_6",
+    "alcohol",
+    "workout",
+    "read",
+    "voice",
+    "english",
+    "story",
+    "ritual",
+  ]);
+}
+
+function fullNameFromMsg_(msg) {
+  const f = msg.from && msg.from.first_name ? msg.from.first_name : "";
+  const l = msg.from && msg.from.last_name ? msg.from.last_name : "";
+  return (f + " " + l).trim();
 }
 
 function appendDaily_(msg, normalized, rawText) {
@@ -128,8 +155,30 @@ function logPomodoro_(event, phase, cycle, meta) {
   ]);
 }
 
-function fullNameFromMsg_(msg) {
-  const f = msg.from && msg.from.first_name ? msg.from.first_name : "";
-  const l = msg.from && msg.from.last_name ? msg.from.last_name : "";
-  return (f + " " + l).trim();
+/**
+ * Coach V2 logger (lo llama coach.gs)
+ * appendCoachV2Log_(new Date(), { level, score, drank, tasks })
+ */
+function appendCoachV2Log_(ts, data) {
+  const sh = getOrCreateSheet_(SHEETS.COACH, null);
+
+  // state v2 viene de coach.gs
+  const st = typeof coachState_ === "function" ? coachState_() : null;
+
+  sh.appendRow([
+    ts || new Date(),
+    isoDate_(new Date()),
+    (data && data.level) || "",
+    st ? st.day21 : "",
+    st ? st.week : "",
+    st ? st.trainDay : "",
+    data && data.score != null ? data.score : "",
+    data && data.drank ? "true" : "false",
+    data && data.tasks && data.tasks.workout ? 1 : 0,
+    data && data.tasks && data.tasks.read ? 1 : 0,
+    data && data.tasks && data.tasks.voice ? 1 : 0,
+    data && data.tasks && data.tasks.english ? 1 : 0,
+    data && data.tasks && data.tasks.story ? 1 : 0,
+    data && data.tasks && data.tasks.ritual ? 1 : 0,
+  ]);
 }

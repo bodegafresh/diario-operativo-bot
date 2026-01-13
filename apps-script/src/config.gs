@@ -1,15 +1,20 @@
 /**
  * config.gs
- * Toda configuración se lee desde Script Properties para evitar credenciales en código.
+ * Config + Script Properties
  */
 
 const PROP = {
   BOT_TOKEN: "BOT_TOKEN",
-  CHAT_ID: "CHAT_ID", // se auto-aprende, pero puedes fijarlo
   SPREADSHEET_ID: "SPREADSHEET_ID",
+  CHAT_ID: "CHAT_ID",
+
+  WEBAPP_URL: "WEBAPP_URL",
+  WORKER_URL: "WORKER_URL",
+  TG_WEBHOOK_SECRET: "TG_WEBHOOK_SECRET",
 
   CHECKINS_SETUP: "CHECKINS_SETUP",
   DIARY_REMINDER_SETUP: "DIARY_REMINDER_SETUP",
+  COACH_SETUP: "COACH_SETUP",
 
   POMO_ENABLED: "POMO_ENABLED",
   POMO_PHASE: "POMO_PHASE",
@@ -23,10 +28,10 @@ const SHEETS = {
   DAILY: "Daily",
   CHECKINS: "Checkins",
   POMODORO: "Pomodoro",
+  COACH_V2: "Coach", // hoja del coach v2
 };
 
 const DEFAULTS = {
-  // Ventanas Chile
   CHECKIN_START_H: 6,
   CHECKIN_END_H: 22,
   CHECKINS_PER_DAY: 3,

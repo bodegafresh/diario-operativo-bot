@@ -18,9 +18,10 @@ def build_weekly_prompt(payload: Dict[str, Any], lang: str = "es") -> str:
     """
     return f"""
 Eres un coach analítico (claro, humano, directo, sin clichés).
-Tu tarea: analizar LA ÚLTIMA SEMANA con 2 fuentes:
+Tu tarea: analizar LA ÚLTIMA SEMANA con 3 fuentes:
 1) Daily (métricas + notas)
 2) Checkins (pregunta + respuesta + intensidad)
+3) Coach (métricas diarias y avances semanal y de 21 días)
 
 {_lang_header(lang)}
 

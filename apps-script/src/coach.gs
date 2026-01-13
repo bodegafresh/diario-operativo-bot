@@ -1,45 +1,64 @@
 /**
- * coach.gs
- * Coach 21 días + sprint semanal + entreno A/B (14 días)
- * - Plan fijo 08:30
- * - 4 recordatorios ALEATORIOS entre 06:00–22:00 (espaciados)
- * - Cierre fijo 22:30
+ * coach_v3.gs
+ * Coach 90 días (12 semanas) + ciclos 21 días (3 ciclos + 1 integración)
+ * Sprints semanales más profundos + entreno diario detallado (músculos + ejercicios)
+ * Recordatorios 06–22 (AM + 4 micro-checks + PM) + cierre nocturno con score
  *
- * Reusa helpers existentes:
- * - tgSend_(), tgSendSafe_()
- * - cfgGet_(), cfgSet_()
- * - getChatId_()
- * - deleteTriggersByHandler_()
- * - isoDate_(), clamp_(), randomTimesSpaced_()
- * - (Opcional) appendCoachV2Log_() si lo tienes definido
+ * ✅ Filosofía: “progresivo, ejecutable, sin perfección”.
+ * ✅ Enfoque: reconectar contigo, estabilidad emocional, disciplina suave pero constante.
  */
 
-const COACH = {
-  ENABLED: "COACH_ENABLED_V2", // true/false
-  LEVEL: "COACH_LEVEL", // suave|estandar|desafiante
-  DAY21: "COACH_DAY_21", // 1..21
-  START_ISO: "COACH_START_ISO", // yyyy-mm-dd
-  WEEK_INDEX: "COACH_WEEK_INDEX", // 1..N (incrementa cada lunes)
-  TRAIN_DAY14: "COACH_TRAIN_DAY14", // 1..14 (A/B)
+/* =========================
+   CONFIG / STATE KEYS
+========================= */
 
-  LAST_AM: "COACH_LAST_AM", // yyyy-mm-dd
-  LAST_PM: "COACH_LAST_PM", // yyyy-mm-dd
-  LAST_REM_SCHEDULED: "COACH_LAST_REM_SCHEDULED", // yyyy-mm-dd (para no reprogramar 2 veces)
+const COACH = {
+  ENABLED: "COACH_ENABLED_V3", // true/false
+  LEVEL: "COACH_LEVEL_V3", // suave|estandar|desafiante
+  START_ISO: "COACH_START_ISO_V3", // yyyy-mm-dd
+
+  // 90d
+  WEEK_INDEX: "COACH_WEEK_INDEX_V3", // 1..12 (incrementa cada lunes)
+  DAY90: "COACH_DAY90_V3", // 1..90 (opcional)
+
+  // Ciclo 21d (para cambios conductuales)
+  DAY21: "COACH_DAY21_V3", // 1..21 (incrementa diario)
+  CYCLE21: "COACH_CYCLE21_V3", // 1..4 (1..3: ciclos; 4: integración)
+
+  // Entreno A/B tracking (14 días), pero la rutina real se decide por día semana
+  TRAIN_DAY14: "COACH_TRAIN_DAY14_V3", // 1..14
+
+  // Dedupes
+  LAST_AM: "COACH_LAST_AM_V3",
+  LAST_PM: "COACH_LAST_PM_V3",
+  LAST_REM_1: "COACH_LAST_REM_1_V3",
+  LAST_REM_2: "COACH_LAST_REM_2_V3",
+  LAST_REM_3: "COACH_LAST_REM_3_V3",
+  LAST_REM_4: "COACH_LAST_REM_4_V3",
+
+  // Opcional: contador de “impulsos”
+  IMPULSE_COUNT: "COACH_IMPULSE_COUNT_V3", // int
 };
 
 const COACH_DEFAULT_LEVEL = "estandar";
 
-// Plan fijo + cierre fijo
+/* =========================
+   TIMINGS (AM / REM / PM)
+========================= */
+
 const COACH_AM = { h: 8, m: 30 };
+const COACH_REMINDERS = [
+  { key: COACH.LAST_REM_1, h: 10, m: 30 },
+  { key: COACH.LAST_REM_2, h: 14, m: 0 },
+  { key: COACH.LAST_REM_3, h: 17, m: 30 },
+  { key: COACH.LAST_REM_4, h: 20, m: 30 },
+];
 const COACH_PM = { h: 22, m: 30 };
 
-// Recordatorios aleatorios
-const COACH_REM_COUNT = 4;
-const COACH_REM_START_H = 6;
-const COACH_REM_END_H = 22; // ventana hasta 22:00
-const COACH_REM_MIN_GAP_MIN = 120; // separación mínima entre recordatorios
+/* =========================
+   ENABLED GATE
+========================= */
 
-// ========== Enabled gate ==========
 function coachEnabled_() {
   return String(cfgGet_(COACH.ENABLED, "true")) === "true";
 }
@@ -50,7 +69,11 @@ function coachIsEnabledGate_() {
   return coachEnabled_();
 }
 
-// ========== Niveles ==========
+/* =========================
+   LEVEL PARAMS (mínimos)
+   - NO perfección: se evalúa por “score”, no por cumplir todo
+========================= */
+
 function coachParams_() {
   const lvl = String(cfgGet_(COACH.LEVEL, COACH_DEFAULT_LEVEL)).toLowerCase();
 
@@ -58,17 +81,18 @@ function coachParams_() {
     return {
       level: "suave",
       mins: {
-        read: 25,
-        voice: 8,
-        english: 10,
-        story: 6,
-        ritual: 5,
-        workout: 25,
+        read: 20,
+        voice: 6,
+        english: 8,
+        story: 5,
+        ritual: 4,
+        workout: 22,
       },
       validMin: 3,
       fragileMin: 2,
       resetMax: 1,
       alcoholResets: false,
+      impulseBudget: 1, // 1 impulso “controlado”/día permitido (ej: compra mínima planificada)
     };
   }
 
@@ -76,7 +100,7 @@ function coachParams_() {
     return {
       level: "desafiante",
       mins: {
-        read: 40,
+        read: 45,
         voice: 15,
         english: 20,
         story: 12,
@@ -87,6 +111,7 @@ function coachParams_() {
       fragileMin: 4,
       resetMax: 3,
       alcoholResets: true,
+      impulseBudget: 0,
     };
   }
 
@@ -96,7 +121,7 @@ function coachParams_() {
       read: 30,
       voice: 10,
       english: 15,
-      story: 10,
+      story: 8,
       ritual: 6,
       workout: 30,
     },
@@ -104,65 +129,44 @@ function coachParams_() {
     fragileMin: 3,
     resetMax: 2,
     alcoholResets: true,
+    impulseBudget: 0,
   };
 }
 
-// ========== Sprints ==========
-function coachSprintByWeek_(weekN) {
-  const W = Number(weekN) || 1;
-  const sprints = [
-    {
-      foco: "Lectura con atención",
-      regla: "1 idea explicable > muchas páginas en blanco.",
-      objetivo: "Terminar cada bloque con 2 frases de resumen.",
-    },
-    {
-      foco: "Voz + ritmo Lucifer",
-      regla: "Más lento, más claro, pausas antes del remate.",
-      objetivo: "1 nota de voz/día explicando lo leído (60–90s).",
-    },
-    {
-      foco: "Abdomen + postura",
-      regla: "Core diario mínimo. Técnica primero.",
-      objetivo: "Rutina A/B 6 días + 1 descarga.",
-    },
-    {
-      foco: "Inglés output",
-      regla: "Hablar/escribir > consumir contenido.",
-      objetivo: "10–20 min/día hablando o escribiendo sin parar.",
-    },
-    {
-      foco: "Storytelling",
-      regla: "Inicio–nudo–desenlace. Simple y claro.",
-      objetivo: "1 mini-historia diaria (30–60s).",
-    },
-    {
-      foco: "Historia/Antropología",
-      regla: "¿Quién habla? ¿Qué se omite? ¿Para quién es progreso?",
-      objetivo: "1 párrafo explicado con tus palabras.",
-    },
-  ];
-  return sprints[(W - 1) % sprints.length];
-}
+/* =========================
+   STATE
+========================= */
 
-// ========== Estado ==========
 function coachState_() {
-  let day21 = Number(cfgGet_(COACH.DAY21, "1")) || 1;
-  day21 = clamp_(day21, 1, 21);
-
-  let week = Number(cfgGet_(COACH.WEEK_INDEX, "1")) || 1;
-  if (week < 1) week = 1;
-
-  let trainDay = Number(cfgGet_(COACH.TRAIN_DAY14, "1")) || 1;
-  trainDay = clamp_(trainDay, 1, 14);
-
+  // start date
   let startIso = cfgGet_(COACH.START_ISO, "");
   if (!startIso) {
     startIso = isoDate_(new Date());
     cfgSet_(COACH.START_ISO, startIso);
   }
 
-  return { day21, week, trainDay, startIso };
+  // week index 1..12
+  let week = Number(cfgGet_(COACH.WEEK_INDEX, "1")) || 1;
+  if (week < 1) week = 1;
+  if (week > 12) week = 12; // tope
+
+  // day21 1..21
+  let day21 = Number(cfgGet_(COACH.DAY21, "1")) || 1;
+  day21 = clamp_(day21, 1, 21);
+
+  // cycle 21 1..4
+  let cycle21 = Number(cfgGet_(COACH.CYCLE21, "1")) || 1;
+  cycle21 = clamp_(cycle21, 1, 4);
+
+  // train day 14
+  let trainDay = Number(cfgGet_(COACH.TRAIN_DAY14, "1")) || 1;
+  trainDay = clamp_(trainDay, 1, 14);
+
+  // optional day90
+  let day90 = Number(cfgGet_(COACH.DAY90, "1")) || 1;
+  day90 = clamp_(day90, 1, 90);
+
+  return { startIso, week, day21, cycle21, trainDay, day90 };
 }
 
 function coachSetLevel_(lvl) {
@@ -173,142 +177,531 @@ function coachSetLevel_(lvl) {
   cfgSet_(COACH.LEVEL, v);
 }
 
+/**
+ * Reset suave: vuelve a día 1 de ciclo actual (no destruye el mes)
+ */
 function coachReset21_() {
   cfgSet_(COACH.DAY21, "1");
-  cfgSet_(COACH.START_ISO, isoDate_(new Date()));
 }
 
+/**
+ * Reset completo 90 días (opcional)
+ */
+function coachReset90_() {
+  cfgSet_(COACH.START_ISO, isoDate_(new Date()));
+  cfgSet_(COACH.WEEK_INDEX, "1");
+  cfgSet_(COACH.DAY21, "1");
+  cfgSet_(COACH.CYCLE21, "1");
+  cfgSet_(COACH.TRAIN_DAY14, "1");
+  cfgSet_(COACH.DAY90, "1");
+  cfgSet_(COACH.IMPULSE_COUNT, "0");
+}
+
+/**
+ * Avanza día: 21d + 14d + 90d
+ * - 21d: si pasa 21 → vuelve a 1 y sube ciclo (hasta 4)
+ */
 function coachAdvanceDay_() {
   const st = coachState_();
 
-  let next21 = st.day21 + 1;
-  if (next21 > 21) next21 = 1;
-  cfgSet_(COACH.DAY21, String(next21));
+  // day90
+  let next90 = st.day90 + 1;
+  if (next90 > 90) next90 = 90;
+  cfgSet_(COACH.DAY90, String(next90));
 
+  // day14
   let next14 = st.trainDay + 1;
   if (next14 > 14) next14 = 1;
   cfgSet_(COACH.TRAIN_DAY14, String(next14));
 
-  return { next21, next14 };
+  // day21 & cycle
+  let next21 = st.day21 + 1;
+  let nextCycle = st.cycle21;
+
+  if (next21 > 21) {
+    next21 = 1;
+    nextCycle = Math.min(4, nextCycle + 1);
+    cfgSet_(COACH.CYCLE21, String(nextCycle));
+  }
+  cfgSet_(COACH.DAY21, String(next21));
+
+  return { next90, next14, next21, nextCycle };
 }
 
-// ========== Entreno A/B ==========
-function coachWorkoutLabel_(trainDay) {
-  return trainDay % 2 === 1
-    ? "A (Abdomen + Empuje)"
-    : "B (Abdomen + Piernas/Espalda)";
+/* =========================
+   90-DAY PHASES + 21-DAY THEMES
+   - 12 semanas = 3 meses aprox
+========================= */
+
+/**
+ * Macro-fase por semana:
+ * 1–4 Fundamento, 5–8 Construcción, 9–12 Integración/Performance
+ */
+function coachPhaseByWeek_(weekN) {
+  const w = Number(weekN) || 1;
+  if (w <= 4)
+    return { phase: "FUNDAMENTO", note: "menos perfección, más consistencia" };
+  if (w <= 8)
+    return { phase: "CONSTRUCCIÓN", note: "subir intensidad sin quemarte" };
+  return { phase: "INTEGRACIÓN", note: "que se vuelva tu identidad" };
 }
 
-function coachWorkoutText_(trainDay) {
-  const A = [
-    "💪 Rutina A — Abdomen + Empuje",
-    "• Crunch lento 3×20",
-    "• Elevación piernas 3×15",
-    "• Toques talón 3×30",
-    "• Plancha 3×45s",
-    "",
-    "Empuje:",
-    "• Flexiones 3×12–15",
-    "• Flexiones inclinadas 3×12",
-    "• Fondos silla 3×12–15",
-    "• Pike push-ups 2×8–10",
-    "",
-    "Tabata 4 min: climbers / high knees",
-  ].join("\n");
-
-  const B = [
-    "💪 Rutina B — Abdomen + Piernas/Espalda",
-    "• Hollow hold 3×30s",
-    "• Bicycle crunch 3×25",
-    "• Plancha lateral 2×30s/lad",
-    "• Reverse crunch 3×20",
-    "",
-    "Piernas/Espalda:",
-    "• Sentadillas 3×20",
-    "• Lunges 3×12/lad",
-    "• Hip thrust 3×20",
-    "• Remo con mochila 3×12–15",
-    "",
-    "Tabata 4 min: burpees suaves",
-  ].join("\n");
-
-  return trainDay % 2 === 1 ? A : B;
+/**
+ * Tema del ciclo 21d:
+ * 1 Control impulsos
+ * 2 Disciplina estable
+ * 3 Expansión social/profesional
+ * 4 Integración (mantener + afinar)
+ */
+function coachTheme21_(cycleN) {
+  const c = Number(cycleN) || 1;
+  const themes = {
+    1: {
+      name: "CONTROL DE IMPULSOS",
+      rule: "Pausa 90s antes de actuar.",
+      target: "Reducir decisiones emocionales.",
+    },
+    2: {
+      name: "DISCIPLINA ESTABLE",
+      rule: "Hacer el mínimo aunque sea poco.",
+      target: "Constancia > motivación.",
+    },
+    3: {
+      name: "EXPANSIÓN SOCIAL/PRO",
+      rule: "1 acto de presencia/día.",
+      target: "Voz, claridad, carisma profesional.",
+    },
+    4: {
+      name: "INTEGRACIÓN",
+      rule: "Mantener sin drama.",
+      target: "Sostener hábitos con calma.",
+    },
+  };
+  return themes[c] || themes[1];
 }
 
-// ========== Mensajes ==========
+/* =========================
+   WEEK SPRINTS (12 semanas)
+   - más profundos y accionables
+========================= */
+
+function coachSprintByWeek_(weekN) {
+  const W = clamp_(Number(weekN) || 1, 1, 12);
+
+  const sprints = [
+    // 1–4 FUNDAMENTO
+    {
+      foco: "Pausa + Control de impulsos",
+      regla: "Si es emocional, esperas 90 segundos y respiras.",
+      objetivo: "Registrar 1 impulso/día y NO ejecutarlo por 90s.",
+      micro:
+        "Antes de comprar/escribir: 5 respiraciones + pregunta: ¿me acerca o me aleja?",
+    },
+    {
+      foco: "Sueño y energía base",
+      regla: "Sin energía, no hay disciplina.",
+      objetivo: "Dormir 7h promedio o mejorar 30 min vs semana anterior.",
+      micro: "Apagar pantallas 30 min antes + lectura suave 10 min.",
+    },
+    {
+      foco: "Core y postura (presencia)",
+      regla: "Columna neutra, abdomen activo, hombros atrás.",
+      objetivo: "Core diario mínimo + 1 check de postura en reuniones.",
+      micro: "En cada reunión: bajar velocidad 15% + pausa al final.",
+    },
+    {
+      foco: "Finanzas: freno a fugas",
+      regla: "No se negocia el registro.",
+      objetivo: "Registrar gastos diario 3–5 min + tope de ocio semanal.",
+      micro: "Cualquier gasto “capricho” requiere espera de 24h.",
+    },
+
+    // 5–8 CONSTRUCCIÓN
+    {
+      foco: "Voz: lento, claro, con pausas",
+      regla: "Hablar menos, decir mejor.",
+      objetivo: "1 nota de voz/día 60–90s explicando algo.",
+      micro: "En daily: 1 idea + 1 propuesta + silencio.",
+    },
+    {
+      foco: "Inglés output (práctico)",
+      regla: "Output > Input.",
+      objetivo: "10–20 min/día hablando o escribiendo sin parar.",
+      micro: "Monólogo en inglés: ‘today I worked on…’ 5–10 min.",
+    },
+    {
+      foco: "Storytelling simple",
+      regla: "Inicio–nudo–desenlace.",
+      objetivo: "1 mini historia/día 30–60s (grabada o en voz alta).",
+      micro: "Remate: una frase final con aprendizaje o giro.",
+    },
+    {
+      foco: "Trabajo profundo (valor)",
+      regla: "1 bloque de foco real vence 6 horas dispersas.",
+      objetivo: "1 bloque de 25–45 min sin distracción por día.",
+      micro: "Cerrar 1 micro-tarea visible (commit, doc, ticket).",
+    },
+
+    // 9–12 INTEGRACIÓN
+    {
+      foco: "Carisma profesional (presencia)",
+      regla: "Calma + precisión = liderazgo.",
+      objetivo: "2 intervenciones de calidad por reunión (máx).",
+      micro: "Frases: ‘Propongo…’, ‘Sugiero…’, ‘Lo eficiente sería…’.",
+    },
+    {
+      foco: "Cuerpo estético: definición consistente",
+      regla: "Nutrición simple > rutinas perfectas.",
+      objetivo: "Alcohol 0 (o mínimo) + 2 comidas limpias/día.",
+      micro: "Proteína + verduras + agua; sin ‘compensar’ con culpa.",
+    },
+    {
+      foco: "Autodominio emocional",
+      regla: "No reacciono, respondo.",
+      objetivo: "Identificar 1 trigger/semana y diseñar salida.",
+      micro: "Si aparece ansiedad: caminar 10 min + respiración nasal.",
+    },
+    {
+      foco: "Integración final: sostener",
+      regla: "Sostener es el verdadero poder.",
+      objetivo: "Repetir hábitos núcleo sin subir carga.",
+      micro: "Checklist mínimo: entreno + registro gastos + lectura 10 min.",
+    },
+  ];
+
+  return sprints[W - 1];
+}
+
+/* =========================
+   WORKOUT: DETALLE DIARIO
+   - decide por día de semana (más realista)
+   - igual mantiene A/B tracking por 14d
+========================= */
+
+function weekdayName_(d) {
+  const names = [
+    "Domingo",
+    "Lunes",
+    "Martes",
+    "Miércoles",
+    "Jueves",
+    "Viernes",
+    "Sábado",
+  ];
+  return names[d] || "Día";
+}
+
+function coachWorkoutForToday_() {
+  const now = new Date();
+  const dow = now.getDay(); // 0=Dom..6=Sab
+  const name = weekdayName_(dow);
+
+  // Plan semanal fijo (ejecutable, evita confusión)
+  // Lunes: A full
+  // Martes: B full
+  // Miércoles: A lite + cardio (NO A completa)
+  // Jueves: B énfasis glúteo/espalda
+  // Viernes: A + tabata fuerte
+  // Sábado: core + postura/espalda (estética)
+  // Domingo: descarga activa (caminar + movilidad)
+
+  if (dow === 1) return workout_A_full_(name); // Lunes
+  if (dow === 2) return workout_B_full_(name); // Martes
+  if (dow === 3) return workout_A_lite_cardio_(name); // Miércoles
+  if (dow === 4) return workout_B_emphasis_(name); // Jueves
+  if (dow === 5) return workout_A_tabata_(name); // Viernes
+  if (dow === 6) return workout_core_posture_(name); // Sábado
+  return workout_recovery_(name); // Domingo
+}
+
+function workout_A_full_(dayName) {
+  return {
+    label: `A FULL — Abdomen + Empuje (${dayName})`,
+    muscles:
+      "Recto abdominal/oblicuos + pecho + tríceps + deltoides anterior/medio",
+    warmup: [
+      "Jumping jacks 30",
+      "Rotación hombros 20/20",
+      "Rotación cadera 20",
+      "Sentadillas suaves 10",
+    ],
+    core: [
+      "Crunch lento 3×20 (2s sube/2s baja)",
+      "Elevación de piernas 3×15 (1s arriba)",
+      "Toques de talón 3×30",
+      "Plancha frontal 3×45–60s",
+    ],
+    strength: [
+      "Flexiones 3×12–15 (rodillas si hace falta)",
+      "Flexiones inclinadas 3×12",
+      "Fondos en silla 3×12–15",
+      "Pike push-ups 2×8–10",
+    ],
+    finisher: ["Tabata 4 min: mountain climbers / high knees (20s/10s ×8)"],
+    cooldown: [
+      "Cobra 20–30s",
+      "Pecho en puerta 20–30s/lado",
+      "Tríceps 20–30s/brazo",
+      "Respiración nasal 5 ciclos",
+    ],
+    time: "30–40 min",
+  };
+}
+
+function workout_B_full_(dayName) {
+  return {
+    label: `B FULL — Abdomen + Piernas/Espalda (${dayName})`,
+    muscles:
+      "Transverso/oblicuos + glúteos/cuádriceps/isquios + dorsal/trapecio medio",
+    warmup: [
+      "Jumping jacks 30",
+      "Sentadillas suaves 15",
+      "Rotación cadera 20",
+      "Estocadas cortas 10",
+    ],
+    core: [
+      "Hollow hold 3×30s",
+      "Bicycle crunch 3×25",
+      "Plancha lateral 2×30s/lado",
+      "Reverse crunch 3×20",
+    ],
+    strength: [
+      "Sentadillas 3×20 (talones, espalda neutra)",
+      "Lunges 3×12/lado",
+      "Hip thrust 3×20 (aprieta glúteo arriba)",
+      "Remo con mochila 3×12–15 (1s pausa al final)",
+    ],
+    finisher: ["Tabata 4 min: burpees suaves (sin salto alto si hay fatiga)"],
+    cooldown: [
+      "Cuádriceps 20–30s/lado",
+      "Isquios 20–30s",
+      "Postura del niño 20–30s",
+      "Respiración lenta 5 ciclos",
+    ],
+    time: "30–40 min",
+  };
+}
+
+function workout_A_lite_cardio_(dayName) {
+  return {
+    label: `A LITE + Cardio corto (${dayName})`,
+    muscles: "Core + empuje ligero + cardio (sin fatigar)",
+    warmup: [
+      "Marcha en el sitio 60s",
+      "Rotación hombros 20/20",
+      "Respiración diafragmática 5 ciclos",
+    ],
+    core: [
+      "Plancha frontal 3×60s",
+      "Toques de talón 3×30",
+      "Dead bug 3×10/lado (lento)",
+    ],
+    strength: ["Flexiones lentas 3×8–10 (control total, no al fallo)"],
+    finisher: [
+      "Cardio 5–8 min: 30s jumping jacks + 30s mountain climbers (repetir)",
+    ],
+    cooldown: [
+      "Cobra 20–30s",
+      "Pecho en puerta 20–30s/lado",
+      "Respiración nasal 5 ciclos",
+    ],
+    time: "20–28 min",
+  };
+}
+
+function workout_B_emphasis_(dayName) {
+  return {
+    label: `B ÉNFASIS — Glúteo/Espalda + Core (${dayName})`,
+    muscles: "Glúteo mayor + dorsal/romboides + core (postura y presencia)",
+    warmup: [
+      "Sentadillas suaves 15",
+      "Puente glúteo 15",
+      "Remo sin peso 15",
+      "Rotación cadera 20",
+    ],
+    core: [
+      "Hollow hold 3×25–30s",
+      "Plancha lateral 3×25–30s/lado",
+      "Reverse crunch 3×15–20",
+    ],
+    strength: [
+      "Sentadilla con pausa abajo 4×15 (2s pausa)",
+      "Zancada atrás 3×12/lado",
+      "Hip thrust con mochila 4×15",
+      "Remo mochila 4×12 (1s pausa)",
+    ],
+    finisher: ["Opcional 3–4 min: high knees suave (si hay energía)"],
+    cooldown: [
+      "Glúteo/piriforme 20–30s/lado",
+      "Isquios 20–30s",
+      "Postura del niño 20–30s",
+    ],
+    time: "30–40 min",
+  };
+}
+
+function workout_A_tabata_(dayName) {
+  return {
+    label: `A + TABATA FUERTE (${dayName})`,
+    muscles: "Core + empuje + cardio intenso (anticraving / antiansiedad)",
+    warmup: [
+      "Jumping jacks 30",
+      "Rotación hombros 20/20",
+      "Flexiones fáciles 8",
+      "Respiración 5 ciclos",
+    ],
+    core: [
+      "Crunch con pausa arriba 3×20 (1–2s)",
+      "Elevación piernas 3×12–15",
+      "Plancha 3×45–60s",
+    ],
+    strength: [
+      "Flexiones diamante 3×8–12 (o normales si cuesta)",
+      "Fondos silla 3×12–15",
+      "Pike push-ups 3×8–10",
+    ],
+    finisher: ["Tabata 4 min: burpees suaves (20s/10s ×8)"],
+    cooldown: [
+      "Cobra 20–30s",
+      "Pecho en puerta 20–30s/lado",
+      "Tríceps 20–30s/brazo",
+    ],
+    time: "30–40 min",
+  };
+}
+
+function workout_core_posture_(dayName) {
+  return {
+    label: `CORE + POSTURA (estética) (${dayName})`,
+    muscles:
+      "Transverso abdominal + oblicuos + espalda alta (romboides/trapecio medio) + lumbares",
+    warmup: [
+      "Caminata suave 3 min o marcha",
+      "Rotación torácica 10/lado",
+      "Respiración 5 ciclos",
+    ],
+    core: [
+      "Vacuum 5×10–12s (suave, sin marearte)",
+      "Plancha lateral + elevación 3×10–12/lado",
+      "Hollow hold 3×20–30s",
+    ],
+    strength: [
+      "Superman hold 3×30s",
+      "Remo 1 mano con mochila 3×12/lado",
+      "Retracción escapular (apretar omóplatos) 3×12 (sin peso)",
+    ],
+    finisher: ["Opcional 8–12 min caminata (baja ansiedad, mejora sueño)"],
+    cooldown: ["Postura del niño 30s", "Cobra 20–30s", "Cuello suave 10s/lado"],
+    time: "22–35 min",
+  };
+}
+
+function workout_recovery_(dayName) {
+  return {
+    label: `DESCARGA ACTIVA (${dayName})`,
+    muscles: "Movilidad + circulación + recuperación (no cero movimiento)",
+    warmup: ["Caminata 20–40 min (ideal)", "o 10 min si estás justo"],
+    core: ["Plancha 2×45–60s (opcional)"],
+    strength: [
+      "Movilidad: cadera 2 min + hombros 2 min + columna torácica 2 min",
+    ],
+    finisher: ["Respiración nasal 5 min (lento)"],
+    cooldown: ["Estiramiento suave 5 min"],
+    time: "20–50 min",
+  };
+}
+
+/* =========================
+   TEXT BUILDERS (Morning/Rem/Night)
+========================= */
+
 function coachMorningText_() {
   const st = coachState_();
   const p = coachParams_();
   const sp = coachSprintByWeek_(st.week);
-  const wlabel = coachWorkoutLabel_(st.trainDay);
+  const ph = coachPhaseByWeek_(st.week);
+  const th = coachTheme21_(st.cycle21);
+  const w = coachWorkoutForToday_();
 
   return [
-    `🧭 [COACH] Día ${st.day21}/21 — Sprint: ${sp.foco}`,
-    `🎯 Regla semana: ${sp.regla}`,
+    `🧭 [COACH V3] Semana ${st.week}/12 — ${ph.phase} (${ph.note})`,
+    `🔁 Ciclo 21d: ${st.day21}/21 — ${th.name}`,
+    `📌 Regla 21d: ${th.rule}`,
+    `🎯 Meta 21d: ${th.target}`,
+    "",
+    `🧩 Sprint semanal: ${sp.foco}`,
+    `• Regla: ${sp.regla}`,
+    `• Objetivo: ${sp.objetivo}`,
+    `• Micro: ${sp.micro}`,
     "",
     "Plan de hoy (simple y ejecutable):",
     "",
-    `📖 Lectura (${p.mins.read} min) → 1 idea explicable en 2 frases`,
-    `🗣️ Voz (${p.mins.voice} min) → lectura modulada / “hmm” pecho + pausas`,
+    `📖 Lectura (${p.mins.read} min) → 2 frases de resumen + 1 idea explicable`,
+    `🗣️ Voz (${p.mins.voice} min) → “hmm” pecho + lectura modulada + pausas`,
     `🇬🇧 Inglés (${p.mins.english} min) → OUTPUT (hablar o escribir)`,
     `🎭 Storytelling (${p.mins.story} min) → mini historia 3 actos (30–60s)`,
     `🧘 Ritual (${p.mins.ritual} min) → respiración + reencuadre + “yo soy”`,
     "",
-    `💪 Entrenamiento (${p.mins.workout}–40 min) → Rutina ${wlabel}`,
+    `💪 Entreno (${p.mins.workout}–40 min): ${w.label}`,
+    `🎯 Músculos: ${w.muscles}`,
     "",
-    "Reglas sagradas hoy:",
-    "• ❌ alcohol",
-    "• ❌ redes que te rompen",
-    "• ✔ dormir decente",
+    "Reglas de estabilidad hoy:",
+    "• ❌ alcohol (siempre que puedas; si recaída: vuelve al mínimo, no te destruyas)",
+    "• ❌ redes/triggers que te rompen",
+    "• ✔ pausa 90s antes de cualquier impulso",
   ].join("\n");
 }
 
-function coachReminderTextRandom_() {
+function coachReminderText_(slotIdx) {
   const p = coachParams_();
   const st = coachState_();
-  const sp = coachSprintByWeek_(st.week);
+  const th = coachTheme21_(st.cycle21);
 
-  const pool = [
-    `⏱️ [COACH] Micro-check: 10 min ahora > cero. ¿Lectura (${p.mins.read}m) empezada?`,
-    `⏱️ [COACH] Haz 1 bloque mínimo: Voz ${p.mins.voice}m o Inglés output ${p.mins.english}m.`,
-    `⏱️ [COACH] Sprint (${sp.foco}): cumple lo pequeño. 1 idea en 2 frases y sigues.`,
-    `⏱️ [COACH] Si estás evitando: 6 min de ritual y vuelves al control.`,
-    `⏱️ [COACH] Cuerpo: aunque sea descarga. 15–20 min y listo. No negocies con el cerebro.`,
-    `⏱️ [COACH] Storytelling: 30–60s con inicio–nudo–desenlace. Hazlo feo, pero hazlo.`,
+  const reminders = [
+    `⏱️ [COACH] Micro-check: 10 min hoy valen más que 0. ¿Lectura (${p.mins.read}m) o 10m? Regla 21d: ${th.rule}`,
+    `⏱️ [COACH] Micro-check: 5–10 min de voz o inglés OUTPUT ahora cambia el día (no esperes motivación).`,
+    `⏱️ [COACH] Micro-check: si estás ansioso, camina 8–12 min + 5 respiraciones. Luego 1 tarea mínima.`,
+    `⏱️ [COACH] Última ventana: entreno + resumen + cerrar sin impulsos (pausa 90s).`,
   ];
-
-  return pickRandom_(pool);
+  const i = clamp_(slotIdx, 0, reminders.length - 1);
+  return reminders[i];
 }
 
 function coachNightCheckText_() {
   const st = coachState_();
   return [
-    `🌙 [COACH-CHECK] Cierre del día ${st.day21}/21`,
+    `🌙 [COACH-CHECK] Cierre — Semana ${st.week}/12 | Ciclo ${st.cycle21} Día ${st.day21}/21`,
     "",
-    "Responde a ESTE mensaje con 7 valores:",
-    "entreno lectura voz ingles story ritual alcohol",
+    "Responde a ESTE mensaje con 8 valores:",
+    "entreno lectura voz ingles story ritual alcohol impulsos",
     "",
     "Ejemplos:",
-    "✅ si si si si si si no",
-    "✅ 1 1 1 1 1 1 0",
-    "⚠️ si si no si no si no",
-    "❌ no no no si no no no",
+    "✅ 1 1 1 1 1 1 0 0",
+    "⚠️ 1 1 0 1 0 1 0 2",
+    "❌ 0 0 0 1 0 0 1 5",
     "",
-    "Nota: alcohol = si rompe (en estándar/desafiante).",
+    "Notas:",
+    "• alcohol: 1 = tomé (en estándar/desafiante puede resetear ciclo 21)",
+    "• impulsos: número (compras/empujes emocionales ejecutados sin pausa).",
   ].join("\n");
 }
 
 function coachSprintKickoffText_() {
   const st = coachState_();
   const sp = coachSprintByWeek_(st.week);
+  const ph = coachPhaseByWeek_(st.week);
   return [
-    `🧩 [SPRINT] Semana ${st.week} — Foco: ${sp.foco}`,
+    `🧩 [SPRINT] Semana ${st.week}/12 — ${ph.phase}`,
     "",
+    `Foco: ${sp.foco}`,
     "Regla:",
     sp.regla,
     "",
     "Objetivo:",
     sp.objetivo,
+    "",
+    "Micro-hábito:",
+    sp.micro,
   ].join("\n");
 }
 
@@ -316,33 +709,57 @@ function coachStatusText_() {
   const st = coachState_();
   const p = coachParams_();
   const sp = coachSprintByWeek_(st.week);
-  const wlabel = coachWorkoutLabel_(st.trainDay);
+  const ph = coachPhaseByWeek_(st.week);
+  const th = coachTheme21_(st.cycle21);
+  const w = coachWorkoutForToday_();
 
   return [
-    "🧭 Coach status",
+    "🧭 Coach V3 status",
     `enabled: ${coachEnabled_() ? "ON" : "OFF"}`,
     `nivel: ${p.level}`,
-    `día 21: ${st.day21}/21`,
-    `semana: ${st.week} (${sp.foco})`,
-    `entreno hoy: Rutina ${wlabel} (día ${st.trainDay}/14)`,
+    `inicio: ${st.startIso}`,
+    `semana: ${st.week}/12 (${ph.phase})`,
+    `ciclo 21: ${st.cycle21}/4 — día ${st.day21}/21 (${th.name})`,
+    `sprint: ${sp.foco}`,
+    `entreno hoy: ${w.label}`,
     `mínimos: lectura ${p.mins.read}m | voz ${p.mins.voice}m | inglés ${p.mins.english}m | story ${p.mins.story}m | ritual ${p.mins.ritual}m | entreno ${p.mins.workout}m`,
-    "",
-    `recordatorios: plan ${pad2_(COACH_AM.h)}:${pad2_(
-      COACH_AM.m
-    )} + 4 aleatorios (06–22) + check ${pad2_(COACH_PM.h)}:${pad2_(
-      COACH_PM.m
-    )}`,
   ].join("\n");
 }
 
-function pad2_(n) {
-  n = Number(n) || 0;
-  return (n < 10 ? "0" : "") + n;
+/* =========================
+   WORKOUT DETAILS COMMAND
+========================= */
+
+function coachWorkoutText_() {
+  const w = coachWorkoutForToday_();
+  const lines = [];
+  lines.push(`💪 [ENTRENO DETALLE] ${w.label}`);
+  lines.push(`🎯 Músculos: ${w.muscles}`);
+  lines.push("");
+  lines.push("Calentamiento:");
+  w.warmup.forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("Core:");
+  w.core.forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("Fuerza/Postura:");
+  w.strength.forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("Finisher:");
+  w.finisher.forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("Enfriamiento:");
+  w.cooldown.forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push(`⏱️ Duración: ${w.time}`);
+  return lines.join("\n");
 }
 
-// ========== Triggers ==========
+/* =========================
+   TRIGGERS
+========================= */
+
 function ensureCoachTriggers_() {
-  // Plan fijo
   deleteTriggersByHandler_("coachSendMorning_");
   ScriptApp.newTrigger("coachSendMorning_")
     .timeBased()
@@ -351,7 +768,17 @@ function ensureCoachTriggers_() {
     .nearMinute(COACH_AM.m)
     .create();
 
-  // Cierre fijo
+  COACH_REMINDERS.forEach((r, idx) => {
+    const handler = `coachReminder_${idx + 1}_`;
+    deleteTriggersByHandler_(handler);
+    ScriptApp.newTrigger(handler)
+      .timeBased()
+      .everyDays(1)
+      .atHour(r.h)
+      .nearMinute(r.m)
+      .create();
+  });
+
   deleteTriggersByHandler_("coachSendNightCheck_");
   ScriptApp.newTrigger("coachSendNightCheck_")
     .timeBased()
@@ -360,7 +787,7 @@ function ensureCoachTriggers_() {
     .nearMinute(COACH_PM.m)
     .create();
 
-  // Sprint semanal
+  // Sprint kickoff cada lunes
   deleteTriggersByHandler_("coachSprintKickoff_");
   ScriptApp.newTrigger("coachSprintKickoff_")
     .timeBased()
@@ -368,56 +795,92 @@ function ensureCoachTriggers_() {
     .onWeekDay(ScriptApp.WeekDay.MONDAY)
     .atHour(9)
     .create();
-
-  // Scheduler diario para recordatorios aleatorios
-  deleteTriggersByHandler_("scheduleDailyCoachReminders_");
-  ScriptApp.newTrigger("scheduleDailyCoachReminders_")
-    .timeBased()
-    .everyDays(1)
-    .atHour(0)
-    .nearMinute(7)
-    .create();
-
-  // Limpieza: elimina triggers antiguos de recordatorios fijos si existieran
-  deleteTriggersByHandler_("coachReminder_1_");
-  deleteTriggersByHandler_("coachReminder_2_");
-  deleteTriggersByHandler_("coachReminder_3_");
-  deleteTriggersByHandler_("coachReminder_4_");
-
-  // Programa hoy mismo (por si lo instalas a mitad de día)
-  scheduleDailyCoachReminders_();
 }
 
+/* =========================
+   SENDERS (AM / REM / PM)
+========================= */
+
 function coachSendMorning_() {
+  coachSendMorningInternal_(false);
+}
+function coachSendMorningForce_() {
+  coachSendMorningInternal_(true);
+}
+
+function coachSendMorningInternal_(force) {
   if (!coachIsEnabledGate_()) return;
+
   const chatId = getChatId_();
   if (!chatId) return;
 
   const today = isoDate_(new Date());
-  if (cfgGet_(COACH.LAST_AM, "") === today) return;
+  if (!force && cfgGet_(COACH.LAST_AM, "") === today) return;
 
-  tgSendSafe_(chatId, coachMorningText_());
-  cfgSet_(COACH.LAST_AM, today);
-}
-
-function coachSendPlanNow_() {
-  // FORZADO: /plan siempre responde
-  if (!coachIsEnabledGate_()) return;
-  const chatId = getChatId_();
-  if (!chatId) return;
-  tgSendSafe_(chatId, coachMorningText_());
+  try {
+    tgSendSafe_(chatId, coachMorningText_());
+    cfgSet_(COACH.LAST_AM, today);
+  } catch (err) {
+    console.error(err);
+    try {
+      tgSend_(
+        chatId,
+        "⚠️ Error enviando /plan: " +
+          (err && err.message ? err.message : String(err))
+      );
+    } catch (_) {}
+  }
 }
 
 function coachSendNightCheck_() {
   if (!coachIsEnabledGate_()) return;
+
   const chatId = getChatId_();
   if (!chatId) return;
 
   const today = isoDate_(new Date());
   if (cfgGet_(COACH.LAST_PM, "") === today) return;
 
-  tgSendSafe_(chatId, coachNightCheckText_());
-  cfgSet_(COACH.LAST_PM, today);
+  try {
+    tgSendSafe_(chatId, coachNightCheckText_());
+    cfgSet_(COACH.LAST_PM, today);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+/* reminders */
+function coachReminder_1_() {
+  coachReminderDispatch_(0);
+}
+function coachReminder_2_() {
+  coachReminderDispatch_(1);
+}
+function coachReminder_3_() {
+  coachReminderDispatch_(2);
+}
+function coachReminder_4_() {
+  coachReminderDispatch_(3);
+}
+
+function coachReminderDispatch_(slotIdx) {
+  if (!coachIsEnabledGate_()) return;
+
+  const chatId = getChatId_();
+  if (!chatId) return;
+
+  const today = isoDate_(new Date());
+  const key = COACH_REMINDERS[slotIdx] && COACH_REMINDERS[slotIdx].key;
+  if (!key) return;
+
+  if (cfgGet_(key, "") === today) return;
+
+  try {
+    tgSend_(chatId, coachReminderText_(slotIdx));
+    cfgSet_(key, today);
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 function coachSprintKickoff_() {
@@ -425,67 +888,21 @@ function coachSprintKickoff_() {
   const chatId = getChatId_();
   if (!chatId) return;
 
-  const st = coachState_();
-  tgSendSafe_(chatId, coachSprintKickoffText_());
-  cfgSet_(COACH.WEEK_INDEX, String(st.week + 1));
-}
-
-// ========== Recordatorios aleatorios ==========
-function scheduleDailyCoachReminders_() {
-  // Si está OFF, borra recordatorios pendientes y sale
-  if (!coachIsEnabledGate_()) {
-    deleteTriggersByHandler_("coachReminderRandom_");
-    return;
+  try {
+    const st = coachState_();
+    tgSendSafe_(chatId, coachSprintKickoffText_());
+    // incrementa semana (hasta 12)
+    cfgSet_(COACH.WEEK_INDEX, String(Math.min(12, st.week + 1)));
+  } catch (err) {
+    console.error(err);
   }
-
-  const chatId = getChatId_();
-  if (!chatId) return;
-
-  // Evita reprogramar dos veces el mismo día (si te escribes al bot varias veces)
-  const today = isoDate_(new Date());
-  if (cfgGet_(COACH.LAST_REM_SCHEDULED, "") === today) return;
-
-  // Borra los recordatorios anteriores (del día previo o manual)
-  deleteTriggersByHandler_("coachReminderRandom_");
-
-  // Determina si programar para hoy o mañana (si ya pasó la ventana)
-  const now = new Date();
-
-  const endToday = new Date(now);
-  endToday.setHours(COACH_REM_END_H, 0, 0, 0);
-
-  const targetDay = new Date(now);
-  if (now > endToday) targetDay.setDate(targetDay.getDate() + 1);
-
-  const start = new Date(targetDay);
-  start.setHours(COACH_REM_START_H, 0, 0, 0);
-
-  const end = new Date(targetDay);
-  end.setHours(COACH_REM_END_H, 0, 0, 0);
-
-  const times = randomTimesSpaced_(
-    start,
-    end,
-    COACH_REM_COUNT,
-    COACH_REM_MIN_GAP_MIN
-  );
-
-  times.forEach((t) =>
-    ScriptApp.newTrigger("coachReminderRandom_").timeBased().at(t).create()
-  );
-
-  cfgSet_(COACH.LAST_REM_SCHEDULED, today);
 }
 
-function coachReminderRandom_() {
-  if (!coachIsEnabledGate_()) return;
-  const chatId = getChatId_();
-  if (!chatId) return;
+/* =========================
+   PARSE NIGHT ANSWER
+   formato: entreno lectura voz ingles story ritual alcohol impulsos
+========================= */
 
-  tgSend_(chatId, coachReminderTextRandom_());
-}
-
-// ========== Parse cierre nocturno ==========
 function parseCoachCheckAnswer_(text) {
   const t = String(text || "")
     .trim()
@@ -493,16 +910,20 @@ function parseCoachCheckAnswer_(text) {
   if (!t) return null;
 
   const parts = t.split(/\s+/).filter(Boolean);
-  if (parts.length < 7) return null;
+  if (parts.length < 8) return null;
 
-  const vals = parts.slice(0, 7).map((x) => {
+  const boolish = (x) => {
     if (x === "1" || x === "si" || x === "sí" || x === "ok" || x === "y")
       return 1;
     if (x === "0" || x === "no" || x === "n") return 0;
     return null;
-  });
+  };
 
+  const vals = parts.slice(0, 7).map(boolish);
   if (vals.some((v) => v == null)) return null;
+
+  const impulses = Number(parts[7]);
+  if (isNaN(impulses) || impulses < 0) return null;
 
   return {
     workout: vals[0],
@@ -512,6 +933,7 @@ function parseCoachCheckAnswer_(text) {
     story: vals[4],
     ritual: vals[5],
     alcohol: vals[6],
+    impulses: impulses,
   };
 }
 
@@ -526,31 +948,47 @@ function coachScore_(obj) {
   );
 }
 
+/**
+ * Aplica cierre nocturno:
+ * - alcohol puede resetear ciclo 21 (según nivel)
+ * - score bajo puede resetear ciclo 21 (no mes completo)
+ * - impulses se guardan como contador (para conciencia)
+ */
 function coachApplyNightResult_(obj) {
   const p = coachParams_();
   const score = coachScore_(obj);
   const drank = obj.alcohol === 1;
 
+  // guardar impulsos
+  const prevImp = Number(cfgGet_(COACH.IMPULSE_COUNT, "0")) || 0;
+  cfgSet_(COACH.IMPULSE_COUNT, String(prevImp + (obj.impulses || 0)));
+
   if (drank && p.alcoholResets) {
     coachReset21_();
-    return { action: "reset", reason: "alcohol", score };
+    return { action: "reset", reason: "alcohol", score: score };
   }
 
+  // penaliza si bebió pero no resetea (nivel suave)
   const effScore = drank && !p.alcoholResets ? Math.max(0, score - 1) : score;
 
-  if (effScore <= p.resetMax) {
+  // penaliza por impulsos ejecutados (cada 3 impulsos resta 1)
+  const impulsePenalty = Math.floor((obj.impulses || 0) / 3);
+  const scoreAfterImpulses = Math.max(0, effScore - impulsePenalty);
+
+  if (scoreAfterImpulses <= p.resetMax) {
     coachReset21_();
-    return { action: "reset", reason: "score", score: effScore };
+    return { action: "reset", reason: "score", score: scoreAfterImpulses };
   }
 
   const adv = coachAdvanceDay_();
-  const tier = effScore < p.validMin ? "fragile" : "valid";
+  const tier = scoreAfterImpulses < p.validMin ? "fragile" : "valid";
 
-  if (typeof appendCoachV2Log_ === "function") {
-    appendCoachV2Log_(new Date(), {
+  if (typeof appendCoachV3Log_ === "function") {
+    appendCoachV3Log_(new Date(), {
       level: p.level,
-      score: effScore,
+      score: scoreAfterImpulses,
       drank: drank,
+      impulses: obj.impulses || 0,
       tasks: obj,
     });
   }
@@ -558,13 +996,21 @@ function coachApplyNightResult_(obj) {
   return {
     action: "advance",
     tier,
-    score: effScore,
+    score: scoreAfterImpulses,
+    next90: adv.next90,
     next21: adv.next21,
-    next14: adv.next14,
+    nextCycle: adv.nextCycle,
   };
 }
 
-// ========== Comandos ==========
+/* =========================
+   COMMANDS
+   /coach on|off|status|reset21|reset90
+   /nivel suave|estandar|desafiante
+   /plan (forzado)
+   /entreno (detalle)
+========================= */
+
 function coachHandleCommand_(chatId, messageId, cmd, arg) {
   if (cmd === "/coach") {
     const a = String(arg || "").toLowerCase();
@@ -576,32 +1022,42 @@ function coachHandleCommand_(chatId, messageId, cmd, arg) {
 
     if (a === "on") {
       coachSetEnabled_(true);
-      tgSend_(chatId, "✅ Coach ON.", messageId);
-
-      // asegura triggers + agenda recordatorios aleatorios hoy
-      ensureCoachTriggers_();
-      scheduleDailyCoachReminders_();
-
-      // manda plan al tiro
-      coachSendPlanNow_();
+      tgSend_(chatId, "✅ Coach V3 ON.", messageId);
+      coachSendMorningInternal_(true);
       return true;
     }
 
     if (a === "off") {
       coachSetEnabled_(false);
-      // borra recordatorios pendientes (para que no sigan llegando)
-      deleteTriggersByHandler_("coachReminderRandom_");
-      tgSend_(chatId, "🛑 Coach OFF.", messageId);
+      tgSend_(chatId, "🛑 Coach V3 OFF.", messageId);
       return true;
     }
 
     if (a === "reset21") {
       coachReset21_();
-      tgSend_(chatId, "🔁 Reiniciado a Día 1/21.", messageId);
+      tgSend_(
+        chatId,
+        "🔁 Reiniciado ciclo 21 a Día 1/21 (sin destruir el mes).",
+        messageId
+      );
       return true;
     }
 
-    tgSend_(chatId, "Uso: /coach on | off | status | reset21", messageId);
+    if (a === "reset90") {
+      coachReset90_();
+      tgSend_(
+        chatId,
+        "🧹 Reset completo 90 días (semana 1, ciclo 1, día 1).",
+        messageId
+      );
+      return true;
+    }
+
+    tgSend_(
+      chatId,
+      "Uso: /coach on | off | status | reset21 | reset90",
+      messageId
+    );
     return true;
   }
 
@@ -616,32 +1072,34 @@ function coachHandleCommand_(chatId, messageId, cmd, arg) {
   }
 
   if (cmd === "/entreno") {
-    const st = coachState_();
-    tgSendSafe_(chatId, coachWorkoutText_(st.trainDay), messageId);
+    tgSendSafe_(chatId, coachWorkoutText_(), messageId);
     return true;
   }
 
   if (cmd === "/plan") {
-    coachSendPlanNow_(); // FORZADO: siempre responde
+    coachSendMorningForce_();
     return true;
   }
 
   return false;
 }
 
-// ========== Run helpers ==========
+/* =========================
+   RUN HELPERS
+========================= */
+
 function run_ensureCoachTriggers() {
   ensureCoachTriggers_();
 }
 function run_sendCoachMorningNow() {
-  coachSendMorning_();
+  coachSendMorningForce_();
 }
 function run_sendCoachNightNow() {
   coachSendNightCheck_();
 }
-function run_scheduleCoachRemindersNow() {
-  scheduleDailyCoachReminders_();
-}
-function run_sendCoachReminderNow() {
-  coachReminderRandom_();
+function run_sendCoachRemindersNow() {
+  coachReminderDispatch_(0);
+  coachReminderDispatch_(1);
+  coachReminderDispatch_(2);
+  coachReminderDispatch_(3);
 }

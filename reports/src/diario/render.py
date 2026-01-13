@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .scoring import KPIBundle
 from .viz import make_heatmap_png
+
 
 def _env() -> Environment:
     templates_dir = Path(__file__).resolve().parent.parent / "templates"
@@ -17,10 +18,13 @@ def _env() -> Environment:
         autoescape=select_autoescape(["html", "xml"]),
     )
 
+
 def _to_records(df: pd.DataFrame, limit: int | None = None) -> list[dict[str, Any]]:
+    if df is None or df.empty:
+        return []
     if limit is not None:
         df = df.tail(limit)
-    # Ensure json-serializable
+
     out = []
     for _, row in df.iterrows():
         rec = {}
@@ -39,6 +43,7 @@ def _to_records(df: pd.DataFrame, limit: int | None = None) -> list[dict[str, An
         out.append(rec)
     return out
 
+
 def render_all(out_dir: Path, kpis: KPIBundle, data: Any, tz: str) -> None:
     env = _env()
 
@@ -49,19 +54,27 @@ def render_all(out_dir: Path, kpis: KPIBundle, data: Any, tz: str) -> None:
     heatmap_path = assets / "heatmap.png"
     make_heatmap_png(kpis.heatmap, heatmap_path)
 
-    # Index
+    # Load AI if exists
+    ai_weekly = None
+    ai_path = assets / "ai_weekly.json"
+    if ai_path.exists():
+        try:
+            ai_weekly = json.loads(ai_path.read_text(encoding="utf-8"))
+        except Exception:
+            ai_weekly = None
+
     tpl = env.get_template("index.html.j2")
     html = tpl.render(
         meta=kpis.meta,
         tz=tz,
         heatmap_rel="assets/heatmap.png",
+        ai_weekly=ai_weekly,
         daily=_to_records(kpis.daily_table, limit=30),
         weekly=_to_records(kpis.weekly_table),
         monthly=_to_records(kpis.monthly_table),
     )
     (out_dir / "index.html").write_text(html, encoding="utf-8")
 
-    # Weekly pages
     weekly_tpl = env.get_template("period.html.j2")
     for w in kpis.weekly_table["week"].tolist():
         dfw = kpis.daily_table[kpis.daily_table["week"] == w].copy()
@@ -72,7 +85,6 @@ def render_all(out_dir: Path, kpis: KPIBundle, data: Any, tz: str) -> None:
         )
         (out_dir / f"weekly_{w}.html").write_text(page, encoding="utf-8")
 
-    # Monthly pages
     for m in kpis.monthly_table["month"].tolist():
         dfm = kpis.daily_table[kpis.daily_table["month"] == m].copy()
         page = weekly_tpl.render(

@@ -164,7 +164,98 @@
       </table>
     </div>
   </div>
+{% if ai_weekly %}
+  <div class="card" style="margin-top:16px">
+    <div style="font-weight:900;font-size:22px;margin-bottom:10px">🧠 Análisis IA (última semana)</div>
 
+    {% if ai_weekly.theme %}
+      <div class="badge" style="margin-bottom:14px">
+        <span style="font-weight:800">Tema:</span>
+        <span>{{ ai_weekly.theme }}</span>
+      </div>
+    {% endif %}
+
+    {% if ai_weekly.evidence %}
+      <div style="font-weight:800;margin:14px 0 8px">Evidencia</div>
+      {% if ai_weekly.evidence.checkins_quotes and ai_weekly.evidence.checkins_quotes|length > 0 %}
+        <div style="margin-bottom:8px">
+          <div class="muted" style="font-size:13px;font-weight:700">Checkins:</div>
+          <ul style="margin-top:4px">
+            {% for q in ai_weekly.evidence.checkins_quotes %}
+              <li class="muted" style="font-size:13px">"{{ q }}"</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      {% if ai_weekly.evidence.diary_quotes and ai_weekly.evidence.diary_quotes|length > 0 %}
+        <div style="margin-bottom:8px">
+          <div class="muted" style="font-size:13px;font-weight:700">Diario:</div>
+          <ul style="margin-top:4px">
+            {% for q in ai_weekly.evidence.diary_quotes %}
+              <li class="muted" style="font-size:13px">"{{ q }}"</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endif %}
+
+    <div style="font-weight:800;margin:14px 0 8px">Patrones</div>
+    <ul>
+      {% for x in (ai_weekly.patterns or []) %}
+        <li>{{ x }}</li>
+      {% endfor %}
+    </ul>
+
+    <div style="font-weight:800;margin:14px 0 8px">Victorias</div>
+    <ul>
+      {% for x in (ai_weekly.wins or []) %}
+        <li>{{ x }}</li>
+      {% endfor %}
+    </ul>
+
+    <div style="font-weight:800;margin:14px 0 8px">Cuellos de botella</div>
+    <ul>
+      {% for x in (ai_weekly.bottlenecks or []) %}
+        <li>{{ x }}</li>
+      {% endfor %}
+    </ul>
+
+    <div style="font-weight:800;margin:14px 0 8px">Deep dive de Checkins</div>
+    {% if ai_weekly.checkins_deep_dive and ai_weekly.checkins_deep_dive|length > 0 %}
+      {% for item in ai_weekly.checkins_deep_dive %}
+        <div style="padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin-bottom:10px;background:rgba(255,255,255,.03);">
+
+          <div style="margin-top:6px"><b>Interpretación:</b> {{ item.interpretation }}</div>
+          <div style="margin-top:6px"><b>Disparador:</b> {{ item.trigger_guess }}</div>
+          <div style="margin-top:6px"><b>Señal corporal:</b> {{ item.body_signal }}</div>
+          <div style="margin-top:6px"><b>Contra-movida (2–5 min):</b> {{ item.counter_move_2_5_min }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">Sin suficiente data de checkins para deep dive.</div>
+    {% endif %}
+
+    <div style="font-weight:800;margin:14px 0 8px">Reglas para la próxima semana</div>
+    <ul>
+      {% for x in (ai_weekly.next_week_rules or []) %}
+        <li>{{ x }}</li>
+      {% endfor %}
+    </ul>
+
+    <div style="font-weight:800;margin:14px 0 8px">Si fallo, entonces...</div>
+    <ul>
+      {% for x in (ai_weekly.if_i_fail_then or []) %}
+        <li>{{ x }}</li>
+      {% endfor %}
+    </ul>
+
+    {% if ai_weekly.identity_sentence %}
+      <div class="muted" style="margin-top:12px">
+        <b>Identidad (operacional):</b> {{ ai_weekly.identity_sentence }}
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
   <div class="muted" style="margin-top:16px;font-size:12px">
     Generado por el CLI. Ajusta scoring y columnas en <code>src/diario/scoring.py</code>.
   </div>

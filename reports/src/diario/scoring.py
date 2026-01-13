@@ -13,7 +13,6 @@ def _coerce_date(df: pd.DataFrame, col: str = "date") -> pd.Series:
 
 
 def _week_id(d: pd.Series) -> pd.Series:
-    # ISO week label like 2026-W02
     dtidx = pd.to_datetime(d.astype(str), errors="coerce")
     iso = dtidx.dt.isocalendar()
     return iso["year"].astype(str) + "-W" + iso["week"].astype(str).str.zfill(2)
@@ -24,12 +23,18 @@ def _month_id(d: pd.Series) -> pd.Series:
     return dtidx.dt.strftime("%Y-%m")
 
 
+def _col(merged: pd.DataFrame, name: str, default: float = 0.0) -> pd.Series:
+    if name in merged.columns:
+        return pd.to_numeric(merged[name], errors="coerce").fillna(default)
+    return pd.Series([default] * len(merged), index=merged.index)
+
+
 @dataclass
 class KPIBundle:
     daily_table: pd.DataFrame
     weekly_table: pd.DataFrame
     monthly_table: pd.DataFrame
-    heatmap: pd.DataFrame  # index=date, columns=metric(s)
+    heatmap: pd.DataFrame
     meta: Dict[str, Any]
 
 
@@ -38,14 +43,12 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
     # DAILY normalization
     # -------------------------
     daily = data.daily.copy()
-
     if "date" not in daily.columns:
         raise ValueError("Daily sheet must include a 'date' column")
 
     daily["date"] = _coerce_date(daily, "date")
     daily = daily.dropna(subset=["date"])
 
-    # Numeric columns (ONLY numeric!)
     num_cols = [
         "sleep_hours",
         "energy",
@@ -58,7 +61,6 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
         if c in daily.columns:
             daily[c] = pd.to_numeric(daily[c], errors="coerce")
 
-    # Boolean-ish columns
     bool_map = {
         "true": True,
         "false": False,
@@ -66,6 +68,8 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
         "0": False,
         "yes": True,
         "no": False,
+        "si": True,
+        "sí": True,
     }
     for c in ["alcohol_consumed", "stalk_occurred", "feature_done"]:
         if c in daily.columns:
@@ -78,15 +82,7 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
                 .fillna(False)
             )
 
-    # -------------------------
-    # STALK: keep label + numeric intensity
-    # Sheet has:
-    # - stalk_occurred: TRUE/FALSE
-    # - stalk_intensity: low/mid/high (text)
-    # We want:
-    # - stalk_intensity_label: "low/mid/high"
-    # - stalk_intensity: 0..3 numeric (for score/heatmap)
-    # -------------------------
+    # stalk intensity label + numeric
     if "stalk_intensity" in daily.columns:
         daily["stalk_intensity_label"] = (
             daily["stalk_intensity"]
@@ -95,35 +91,22 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
             .str.lower()
             .replace({"": None, "none": None, "nan": None})
         )
-
-        intensity_map = {
-            None: 0,
-            "low": 1,
-            "mid": 2,
-            "medium": 2,
-            "high": 3,
-        }
-
+        intensity_map = {None: 0, "low": 1, "mid": 2, "medium": 2, "high": 3}
         daily["stalk_intensity"] = daily["stalk_intensity_label"].map(intensity_map)
 
-        # If stalk occurred but intensity missing -> assume low (=1)
         if "stalk_occurred" in daily.columns:
             daily.loc[
                 (daily["stalk_occurred"] == True) & (daily["stalk_intensity"].isna()),
                 "stalk_intensity",
             ] = 1
 
-        daily["stalk_intensity"] = (
-            pd.to_numeric(daily["stalk_intensity"], errors="coerce").fillna(0)
-        )
-
+        daily["stalk_intensity"] = pd.to_numeric(daily["stalk_intensity"], errors="coerce").fillna(0)
     else:
-        # If no column exists, create consistent fields
         daily["stalk_intensity_label"] = None
         daily["stalk_intensity"] = 0
 
     # -------------------------
-    # Pomodoro: compute minutes per day
+    # Pomodoro: minutes per day
     # -------------------------
     pomo = data.pomodoro.copy()
     if "date" in pomo.columns:
@@ -132,7 +115,6 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
     else:
         pomo = pd.DataFrame(columns=["date", "event", "phase", "cycle"])
 
-    # Count 'end work' events => completed work blocks, assume 25 min each.
     if not pomo.empty and {"event", "phase"}.issubset(pomo.columns):
         work_ends = (
             pomo[(pomo["event"] == "end") & (pomo["phase"] == "work")]
@@ -153,7 +135,7 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
         chk["date"] = _coerce_date(chk, "date")
         chk = chk.dropna(subset=["date"])
     else:
-        chk = pd.DataFrame(columns=["date", "question", "intensity_0_10"])
+        chk = pd.DataFrame(columns=["date", "question", "intensity_0_10", "answer_raw"])
 
     if "intensity_0_10" in chk.columns:
         chk["intensity_0_10"] = pd.to_numeric(chk["intensity_0_10"], errors="coerce")
@@ -167,21 +149,55 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
         chk_daily = pd.DataFrame(columns=["checkins_count", "checkins_intensity_avg"])
 
     # -------------------------
-    # Merge daily + pomo + checkins
+    # Coach: per-day metrics (score_0_6, impulses_count)
+    # -------------------------
+    coach = data.coach.copy()
+    if coach is None or coach.empty or "date" not in coach.columns:
+        coach_daily = pd.DataFrame(columns=["coach_score", "coach_impulses", "coach_alcohol_days"])
+    else:
+        coach["date"] = _coerce_date(coach, "date")
+        coach = coach.dropna(subset=["date"])
+
+        # names from your Coach sheet
+        if "score_0_6" in coach.columns:
+            coach["score_0_6"] = pd.to_numeric(coach["score_0_6"], errors="coerce")
+        if "impulses_count" in coach.columns:
+            coach["impulses_count"] = pd.to_numeric(coach["impulses_count"], errors="coerce")
+
+        # alcohol can be boolish
+        if "alcohol_bool" in coach.columns:
+            coach["alcohol_bool"] = (
+                coach["alcohol_bool"]
+                .astype(str).str.strip().str.lower()
+                .map({"true": True, "false": False, "1": True, "0": False, "si": True, "sí": True, "no": False})
+                .fillna(False)
+            )
+        else:
+            coach["alcohol_bool"] = False
+
+        coach_daily = coach.groupby("date").agg(
+            coach_score=("score_0_6", "mean"),
+            coach_impulses=("impulses_count", "sum"),
+            coach_alcohol_days=("alcohol_bool", "sum"),
+        )
+
+    # -------------------------
+    # Merge daily + pomo + checkins + coach
     # -------------------------
     merged = (
         daily.set_index("date")
         .join(pomo_daily, how="left")
         .join(chk_daily, how="left")
+        .join(coach_daily, how="left")
         .reset_index()
     )
 
-    # Make sure missing numeric fields are present
-    for col in ["pomodoro_minutes", "focus_minutes", "alcohol_units", "sleep_hours", "energy"]:
+    # ensure numeric cols exist
+    for col in ["pomodoro_minutes", "focus_minutes", "alcohol_units", "sleep_hours", "energy", "coach_score", "coach_impulses"]:
         if col not in merged.columns:
             merged[col] = 0
 
-    # Convert stalk_occurred to 0/1 for heatmap if present
+    # stalk occurred numeric
     if "stalk_occurred" in merged.columns:
         merged["stalk_occurred_num"] = merged["stalk_occurred"].astype(bool).astype(int)
     else:
@@ -192,20 +208,20 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
     # Derived score (simple)
     # -------------------------
     merged["score"] = (
-        merged.get("energy", 0).fillna(0) * 1.5
-        + merged.get("sleep_hours", 0).fillna(0) * 1.0
-        + (merged.get("pomodoro_minutes", 0).fillna(0) / 50.0) * 2.0
-        + merged.get("focus_minutes", 0).fillna(0) / 60.0
-        - merged.get("alcohol_units", 0).fillna(0) * 0.8
-        - merged.get("stalk_intensity", 0).fillna(0) * 0.6
+        _col(merged, "energy") * 1.5
+        + _col(merged, "sleep_hours") * 1.0
+        + (_col(merged, "pomodoro_minutes") / 50.0) * 2.0
+        + _col(merged, "focus_minutes") / 60.0
+        - _col(merged, "alcohol_units") * 0.8
+        - _col(merged, "stalk_intensity") * 0.6
+        + (_col(merged, "coach_score") / 6.0) * 2.0
+        - _col(merged, "coach_impulses") * 0.3
     ).round(2)
 
     merged["week"] = _week_id(pd.Series(merged["date"]))
     merged["month"] = _month_id(pd.Series(merged["date"]))
 
-    # -------------------------
-    # Weekly + Monthly aggregation
-    # -------------------------
+    # Weekly aggregation
     weekly = (
         merged.groupby("week")
         .agg(
@@ -218,13 +234,18 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
             alcohol_units=("alcohol_units", "sum"),
             stalk_days=("stalk_occurred_num", "sum"),
             stalk_intensity_avg=("stalk_intensity", "mean"),
-            feature_done_days=("feature_done", "sum"),
-            trading_trades=("trading_trades", "sum"),
-            game_commits=("game_commits", "sum"),
+            feature_done_days=("feature_done", "sum") if "feature_done" in merged.columns else ("date", "count"),
+            trading_trades=("trading_trades", "sum") if "trading_trades" in merged.columns else ("date", "count"),
+            game_commits=("game_commits", "sum") if "game_commits" in merged.columns else ("date", "count"),
+            coach_score_avg=("coach_score", "mean"),
+            coach_impulses=("coach_impulses", "sum"),
+            checkins_count=("checkins_count", "sum") if "checkins_count" in merged.columns else ("date", "count"),
+            checkins_intensity_avg=("checkins_intensity_avg", "mean") if "checkins_intensity_avg" in merged.columns else ("score", "mean"),
         )
         .reset_index()
     )
 
+    # Monthly aggregation
     monthly = (
         merged.groupby("month")
         .agg(
@@ -237,17 +258,17 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
             alcohol_units=("alcohol_units", "sum"),
             stalk_days=("stalk_occurred_num", "sum"),
             stalk_intensity_avg=("stalk_intensity", "mean"),
-            feature_done_days=("feature_done", "sum"),
-            trading_trades=("trading_trades", "sum"),
-            game_commits=("game_commits", "sum"),
+            feature_done_days=("feature_done", "sum") if "feature_done" in merged.columns else ("date", "count"),
+            trading_trades=("trading_trades", "sum") if "trading_trades" in merged.columns else ("date", "count"),
+            game_commits=("game_commits", "sum") if "game_commits" in merged.columns else ("date", "count"),
+            coach_score_avg=("coach_score", "mean"),
+            coach_impulses=("coach_impulses", "sum"),
+            checkins_count=("checkins_count", "sum") if "checkins_count" in merged.columns else ("date", "count"),
+            checkins_intensity_avg=("checkins_intensity_avg", "mean") if "checkins_intensity_avg" in merged.columns else ("score", "mean"),
         )
         .reset_index()
     )
 
-    # -------------------------
-    # Weekly status (clear)
-    # Based on your observed scale (daily ~12..26, weekly avg ~18.5)
-    # -------------------------
     def weekly_status(avg: float) -> str:
         if pd.isna(avg):
             return "—"
@@ -261,9 +282,7 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
 
     weekly["status"] = weekly["score_avg"].apply(weekly_status)
 
-    # -------------------------
-    # Heatmap data
-    # -------------------------
+    # Heatmap
     heat_cols = [
         "score",
         "energy",
@@ -273,6 +292,9 @@ def build_kpis(data: DataBundle, tz: str = "America/Santiago") -> KPIBundle:
         "alcohol_units",
         "stalk_occurred_num",
         "stalk_intensity",
+        "coach_score",
+        "coach_impulses",
+        "checkins_intensity_avg",
     ]
     heat = merged[["date"] + [c for c in heat_cols if c in merged.columns]].copy()
     heat = heat.set_index("date").sort_index()

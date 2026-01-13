@@ -13,20 +13,14 @@ class DataBundle:
     daily: pd.DataFrame
     checkins: pd.DataFrame
     pomodoro: pd.DataFrame
+    coach: pd.DataFrame
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Normalize column names to avoid subtle issues from Google Sheets:
-    - strips spaces
-    - lowercases
-    - replaces spaces with underscores
-    - removes BOM if present
-    """
     df = df.copy()
     df.columns = [
         str(c)
-        .replace("\ufeff", "")          # BOM
+        .replace("\ufeff", "")
         .strip()
         .lower()
         .replace(" ", "_")
@@ -36,9 +30,6 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _empty_to_na(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convert empty strings to NA for consistent downstream parsing.
-    """
     df = df.copy()
     df = df.replace({"": pd.NA, " ": pd.NA})
     return df
@@ -52,19 +43,20 @@ def _read_excel(excel_path: str | Path) -> DataBundle:
     daily = pd.read_excel(path, sheet_name="Daily")
     checkins = pd.read_excel(path, sheet_name="Checkins")
     pomodoro = pd.read_excel(path, sheet_name="Pomodoro")
+    try:
+        coach = pd.read_excel(path, sheet_name="Coach")
+    except Exception:
+        coach = pd.DataFrame()
 
     daily = _empty_to_na(_normalize_columns(daily))
     checkins = _empty_to_na(_normalize_columns(checkins))
     pomodoro = _empty_to_na(_normalize_columns(pomodoro))
+    coach = _empty_to_na(_normalize_columns(coach))
 
-    return DataBundle(daily=daily, checkins=checkins, pomodoro=pomodoro)
+    return DataBundle(daily=daily, checkins=checkins, pomodoro=pomodoro, coach=coach)
 
 
 def _ws_to_df(ws) -> pd.DataFrame:
-    """
-    Reads a worksheet into a DataFrame.
-    Assumes first row are headers.
-    """
     records = ws.get_all_records(default_blank="", head=1)
     df = pd.DataFrame(records)
     df = _empty_to_na(_normalize_columns(df))
@@ -77,18 +69,8 @@ def _read_sheets(
     daily_tab: str = "Daily",
     checkins_tab: str = "Checkins",
     pomodoro_tab: str = "Pomodoro",
+    coach_tab: str = "Coach",
 ) -> DataBundle:
-    """
-    Reads Google Sheets tabs using a Service Account JSON.
-
-    Required:
-      - spreadsheet_id (env: GOOGLE_SHEETS_SPREADSHEET_ID)
-      - creds_path (env: GOOGLE_APPLICATION_CREDENTIALS)
-
-    Notes:
-      - Share the spreadsheet with the service account email.
-      - Tabs must be named exactly: Daily / Checkins / Pomodoro (or override names).
-    """
     spreadsheet_id = spreadsheet_id or os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
     creds_path = creds_path or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
@@ -117,11 +99,19 @@ def _read_sheets(
     checkins_ws = sh.worksheet(checkins_tab)
     pomodoro_ws = sh.worksheet(pomodoro_tab)
 
+    # Coach puede no existir aún
+    coach_df = pd.DataFrame()
+    try:
+        coach_ws = sh.worksheet(coach_tab)
+        coach_df = _ws_to_df(coach_ws)
+    except Exception:
+        coach_df = pd.DataFrame()
+
     daily = _ws_to_df(daily_ws)
     checkins = _ws_to_df(checkins_ws)
     pomodoro = _ws_to_df(pomodoro_ws)
 
-    return DataBundle(daily=daily, checkins=checkins, pomodoro=pomodoro)
+    return DataBundle(daily=daily, checkins=checkins, pomodoro=pomodoro, coach=coach_df)
 
 
 def load_data(

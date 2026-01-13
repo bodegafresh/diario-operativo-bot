@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -27,8 +28,13 @@ def make_heatmap_png(heat: pd.DataFrame, out_path: str | Path) -> None:
     mat = df.to_numpy(dtype=float)
 
     # Normalize columns (z-score)
-    col_mean = np.nanmean(mat, axis=0)
-    col_std = np.nanstd(mat, axis=0)
+    # Suppress warnings for empty slices (expected when no data)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*empty slice.*")
+        warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*Degrees of freedom.*")
+        col_mean = np.nanmean(mat, axis=0)
+        col_std = np.nanstd(mat, axis=0)
+
     col_std[col_std == 0] = 1.0
     norm = (mat - col_mean) / col_std
 

@@ -30,17 +30,17 @@ function toFloat_(v) {
   return isFinite(n) ? n : null;
 }
 
-function toBool_(v) {
-  if (v == null) return null;
-  const s = String(v).trim().toLowerCase();
-  if (["true", "yes", "y", "1", "si", "sí"].indexOf(s) !== -1) return true;
-  if (["false", "no", "n", "0"].indexOf(s) !== -1) return false;
+function toBool01_(v) {
+  const s = String(v == null ? "" : v)
+    .trim()
+    .toLowerCase();
+  if (["1", "true", "yes", "y", "si", "sí"].indexOf(s) !== -1) return 1;
+  if (["0", "false", "no", "n"].indexOf(s) !== -1) return 0;
   return null;
 }
 
 function isWeekdayChile_(d) {
-  // 0=Dom ... 6=Sáb
-  const day = d.getDay();
+  const day = d.getDay(); // 0 dom..6 sab
   return day >= 1 && day <= 5;
 }
 
@@ -57,17 +57,13 @@ function pickRandom_(arr) {
 }
 
 function deleteTriggersByHandler_(handlerName) {
-  const ts = ScriptApp.getProjectTriggers();
-  ts.forEach((t) => {
+  ScriptApp.getProjectTriggers().forEach((t) => {
     if (t.getHandlerFunction && t.getHandlerFunction() === handlerName) {
       ScriptApp.deleteTrigger(t);
     }
   });
 }
 
-/**
- * Genera N tiempos aleatorios entre start..end separados por al menos minGapMin.
- */
 function randomTimesSpaced_(start, end, count, minGapMin) {
   const minGapMs = (minGapMin || 60) * 60 * 1000;
   const chosen = [];
@@ -89,7 +85,6 @@ function randomTimesSpaced_(start, end, count, minGapMin) {
     if (ok) chosen.push(d);
   }
 
-  // fallback si no logró spacing perfecto
   while (chosen.length < count) {
     const r2 =
       start.getTime() + Math.random() * (end.getTime() - start.getTime());

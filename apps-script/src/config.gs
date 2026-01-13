@@ -28,7 +28,7 @@ const SHEETS = {
   DAILY: "Daily",
   CHECKINS: "Checkins",
   POMODORO: "Pomodoro",
-  COACH_V2: "Coach", // hoja del coach v2
+  COACH_V3: "Coach", // hoja del coach v2
 };
 
 const DEFAULTS = {

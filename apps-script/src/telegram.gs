@@ -1,9 +1,9 @@
 /**
- * telegram.gs
+ * telegram.gs (agrega /ritual al help)
  * - Webhook router
  * - Seguridad: chat privado + single-user (CHAT_ID)
  * - Reply handlers: DIARIO, CHECK-IN, COACH-CHECK
- * - Comandos: /help /status /diario /pomodoro + coach v2 (/coach, /nivel, /entreno, /plan)
+ * - Comandos: /help /status /diario /pomodoro + coach (/coach, /nivel, /entreno, /plan, /ritual)
  */
 
 const TG_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
@@ -55,7 +55,6 @@ function handleMessage_(msg) {
   if (!isPrivateChat_(msg)) return;
   if (!authorizeOrLearnChat_(chatId)) return;
 
-  // asegura triggers base al primer contacto autorizado
   ensureBaseAutomation_();
 
   if (text.startsWith("/")) {
@@ -99,7 +98,7 @@ function handleMessage_(msg) {
     if (!parsed) {
       tgSend_(
         chatId,
-        "Formato inválido. Responde: si si si si si si no (entreno lectura voz ingles story ritual alcohol)",
+        "Formato inválido. Responde: 1 1 1 1 1 1 0 0 (entreno lectura voz ingles story ritual alcohol impulsos)",
         msg.message_id
       );
       return;
@@ -121,16 +120,19 @@ function handleMessage_(msg) {
     const badge = result.tier === "valid" ? "✅" : "⚠️";
     tgSend_(
       chatId,
-      `${badge} Cierre registrado. Score=${result.score}/6.\nMañana: día ${result.next21}/21 | Entreno día ${result.next14}/14`,
+      `${badge} Cierre registrado. Score=${result.score}/6.\nMañana: día ${result.next21}/21`,
       msg.message_id
     );
     return;
   }
 
-  tgSend_(chatId, "Te leo. Usa /diario, /plan o /coach 🙂", msg.message_id);
+  tgSend_(
+    chatId,
+    "Te leo. Usa /diario, /plan, /ritual o /coach 🙂",
+    msg.message_id
+  );
 }
 
-/** --- Seguridad helpers --- */
 function isPrivateChat_(msg) {
   const t = msg && msg.chat && msg.chat.type ? String(msg.chat.type) : "";
   return t === "private";
@@ -145,7 +147,6 @@ function authorizeOrLearnChat_(chatId) {
   return String(allowed) === String(chatId);
 }
 
-/** Telegram sendMessage */
 function tgSend_(chatId, text, replyToMessageId) {
   const url = "https://api.telegram.org/bot" + getBotToken_() + "/sendMessage";
   const payload = { chat_id: chatId, text: String(text || "") };
@@ -196,16 +197,16 @@ function tgSendSafe_(chatId, text, replyToMessageId) {
   if (buf) tgSend_(chatId, buf, replyToMessageId);
 }
 
-/** Help / status */
 function helpShort_() {
   return [
     "Comandos:",
     "/diario",
     "/pomodoro start | stop | status",
-    "/coach on | off | status | reset21",
+    "/coach on | off | status | reset21 | reset90",
     "/nivel suave | estandar | desafiante",
     "/plan",
     "/entreno",
+    "/ritual",
     "/status",
     "/help",
   ].join("\n");
@@ -217,10 +218,11 @@ function helpLong_() {
     "",
     "• /diario → registrar día (responde al template)",
     "• /pomodoro start|stop|status → 25/5 x4 + 15 (Lun–Vie 09–18 Chile)",
-    "• /coach on|off|status|reset21 → coach v2 (21 días + sprint + recordatorios)",
+    "• /coach on|off|status|reset21|reset90 → coach v3 (90 días + 21d cycles)",
     "• /nivel suave|estandar|desafiante → dificultad del coach",
     "• /plan → envía el plan del día ahora",
-    "• /entreno → envía rutina A/B de hoy",
+    "• /entreno → envía entreno detallado de hoy",
+    "• /ritual → micro-ritual con 1 “yo soy” aleatorio (2–4 min)",
     "• /status → estado del sistema",
     "• /help → ayuda",
     "",
@@ -253,13 +255,11 @@ function status_() {
   ].join("\n");
 }
 
-/** Router de comandos */
 function handleCommand_(chatId, messageId, text) {
   const parts = text.split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
   const arg = (parts[1] || "").toLowerCase();
 
-  // Coach v2 router
   if (typeof coachHandleCommand_ === "function") {
     try {
       const handled = coachHandleCommand_(chatId, messageId, cmd, arg);
@@ -317,7 +317,6 @@ function handleCommand_(chatId, messageId, text) {
   tgSend_(chatId, "Comando no reconocido. Usa /help.", messageId);
 }
 
-/** Update dedupe */
 function shouldProcessUpdate_(updateId) {
   const props = PropertiesService.getScriptProperties();
   const lastRaw = props.getProperty(PROP.LAST_UPDATE_ID);

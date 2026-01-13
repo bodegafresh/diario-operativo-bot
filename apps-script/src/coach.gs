@@ -1,11 +1,14 @@
 /**
- * coach_v3.gs
+ * coach.gs (v3 + /ritual)
  * Coach 90 días (12 semanas) + ciclos 21 días (3 ciclos + 1 integración)
  * Sprints semanales más profundos + entreno diario detallado (músculos + ejercicios)
  * Recordatorios 06–22 (AM + 4 micro-checks + PM) + cierre nocturno con score
  *
  * ✅ Filosofía: “progresivo, ejecutable, sin perfección”.
  * ✅ Enfoque: reconectar contigo, estabilidad emocional, disciplina suave pero constante.
+ *
+ * NUEVO:
+ * - /ritual → envía 1 afirmación “Yo soy” aleatoria + micro-ritual guiado (2–4 min)
  */
 
 /* =========================
@@ -41,6 +44,50 @@ const COACH = {
 };
 
 const COACH_DEFAULT_LEVEL = "estandar";
+
+/* =========================
+   RITUAL: “YO SOY” BANK
+   - se entrega 1 aleatoria en /ritual
+   - pensadas para reconectar contigo (no “perfecto”, sí real)
+========================= */
+
+const YO_SOY_BANK = [
+  // núcleo
+  "Yo soy un hombre que se elige.",
+  "Yo soy calma antes que reacción.",
+  "Yo soy disciplina simple: hago lo mínimo aunque no tenga ganas.",
+  "Yo soy consistente.",
+  "Yo soy dueño de mi atención.",
+  "Yo soy alguien que cumple su palabra (aunque sea pequeña).",
+  "Yo soy responsable de mi energía y mi dinero.",
+  "Yo soy un hombre que avanza: no perfecto, pero constante.",
+
+  // emocional / impulsos
+  "Yo soy capaz de sentir sin actuar impulsivamente.",
+  "Yo soy más grande que un impulso de cinco minutos.",
+  "Yo soy paz incluso con incomodidad.",
+  "Yo soy alguien que se cuida cuando está vulnerable.",
+  "Yo soy alguien que no se abandona.",
+
+  // presencia / voz / postura
+  "Yo soy presencia: hablo lento y claro.",
+  "Yo soy postura firme y tranquila.",
+  "Yo soy control: respiro y decido.",
+  "Yo soy energía estable.",
+
+  // trabajo / finanzas
+  "Yo soy valor: aporto claridad.",
+  "Yo soy enfoque: termino lo que empiezo.",
+  "Yo soy alguien que cuida su dinero con respeto.",
+  "Yo soy un hombre que no compra para llenar vacíos.",
+  "Yo soy decisiones conscientes.",
+];
+
+function pickRandom_(arr) {
+  if (!arr || !arr.length) return "";
+  const i = Math.floor(Math.random() * arr.length);
+  return arr[i];
+}
 
 /* =========================
    TIMINGS (AM / REM / PM)
@@ -92,7 +139,7 @@ function coachParams_() {
       fragileMin: 2,
       resetMax: 1,
       alcoholResets: false,
-      impulseBudget: 1, // 1 impulso “controlado”/día permitido (ej: compra mínima planificada)
+      impulseBudget: 1,
     };
   }
 
@@ -138,31 +185,25 @@ function coachParams_() {
 ========================= */
 
 function coachState_() {
-  // start date
   let startIso = cfgGet_(COACH.START_ISO, "");
   if (!startIso) {
     startIso = isoDate_(new Date());
     cfgSet_(COACH.START_ISO, startIso);
   }
 
-  // week index 1..12
   let week = Number(cfgGet_(COACH.WEEK_INDEX, "1")) || 1;
   if (week < 1) week = 1;
-  if (week > 12) week = 12; // tope
+  if (week > 12) week = 12;
 
-  // day21 1..21
   let day21 = Number(cfgGet_(COACH.DAY21, "1")) || 1;
   day21 = clamp_(day21, 1, 21);
 
-  // cycle 21 1..4
   let cycle21 = Number(cfgGet_(COACH.CYCLE21, "1")) || 1;
   cycle21 = clamp_(cycle21, 1, 4);
 
-  // train day 14
   let trainDay = Number(cfgGet_(COACH.TRAIN_DAY14, "1")) || 1;
   trainDay = clamp_(trainDay, 1, 14);
 
-  // optional day90
   let day90 = Number(cfgGet_(COACH.DAY90, "1")) || 1;
   day90 = clamp_(day90, 1, 90);
 
@@ -177,16 +218,10 @@ function coachSetLevel_(lvl) {
   cfgSet_(COACH.LEVEL, v);
 }
 
-/**
- * Reset suave: vuelve a día 1 de ciclo actual (no destruye el mes)
- */
 function coachReset21_() {
   cfgSet_(COACH.DAY21, "1");
 }
 
-/**
- * Reset completo 90 días (opcional)
- */
 function coachReset90_() {
   cfgSet_(COACH.START_ISO, isoDate_(new Date()));
   cfgSet_(COACH.WEEK_INDEX, "1");
@@ -197,24 +232,17 @@ function coachReset90_() {
   cfgSet_(COACH.IMPULSE_COUNT, "0");
 }
 
-/**
- * Avanza día: 21d + 14d + 90d
- * - 21d: si pasa 21 → vuelve a 1 y sube ciclo (hasta 4)
- */
 function coachAdvanceDay_() {
   const st = coachState_();
 
-  // day90
   let next90 = st.day90 + 1;
   if (next90 > 90) next90 = 90;
   cfgSet_(COACH.DAY90, String(next90));
 
-  // day14
   let next14 = st.trainDay + 1;
   if (next14 > 14) next14 = 1;
   cfgSet_(COACH.TRAIN_DAY14, String(next14));
 
-  // day21 & cycle
   let next21 = st.day21 + 1;
   let nextCycle = st.cycle21;
 
@@ -230,13 +258,8 @@ function coachAdvanceDay_() {
 
 /* =========================
    90-DAY PHASES + 21-DAY THEMES
-   - 12 semanas = 3 meses aprox
 ========================= */
 
-/**
- * Macro-fase por semana:
- * 1–4 Fundamento, 5–8 Construcción, 9–12 Integración/Performance
- */
 function coachPhaseByWeek_(weekN) {
   const w = Number(weekN) || 1;
   if (w <= 4)
@@ -246,13 +269,6 @@ function coachPhaseByWeek_(weekN) {
   return { phase: "INTEGRACIÓN", note: "que se vuelva tu identidad" };
 }
 
-/**
- * Tema del ciclo 21d:
- * 1 Control impulsos
- * 2 Disciplina estable
- * 3 Expansión social/profesional
- * 4 Integración (mantener + afinar)
- */
 function coachTheme21_(cycleN) {
   const c = Number(cycleN) || 1;
   const themes = {
@@ -282,14 +298,12 @@ function coachTheme21_(cycleN) {
 
 /* =========================
    WEEK SPRINTS (12 semanas)
-   - más profundos y accionables
 ========================= */
 
 function coachSprintByWeek_(weekN) {
   const W = clamp_(Number(weekN) || 1, 1, 12);
 
   const sprints = [
-    // 1–4 FUNDAMENTO
     {
       foco: "Pausa + Control de impulsos",
       regla: "Si es emocional, esperas 90 segundos y respiras.",
@@ -316,7 +330,6 @@ function coachSprintByWeek_(weekN) {
       micro: "Cualquier gasto “capricho” requiere espera de 24h.",
     },
 
-    // 5–8 CONSTRUCCIÓN
     {
       foco: "Voz: lento, claro, con pausas",
       regla: "Hablar menos, decir mejor.",
@@ -342,7 +355,6 @@ function coachSprintByWeek_(weekN) {
       micro: "Cerrar 1 micro-tarea visible (commit, doc, ticket).",
     },
 
-    // 9–12 INTEGRACIÓN
     {
       foco: "Carisma profesional (presencia)",
       regla: "Calma + precisión = liderazgo.",
@@ -374,8 +386,6 @@ function coachSprintByWeek_(weekN) {
 
 /* =========================
    WORKOUT: DETALLE DIARIO
-   - decide por día de semana (más realista)
-   - igual mantiene A/B tracking por 14d
 ========================= */
 
 function weekdayName_(d) {
@@ -396,22 +406,13 @@ function coachWorkoutForToday_() {
   const dow = now.getDay(); // 0=Dom..6=Sab
   const name = weekdayName_(dow);
 
-  // Plan semanal fijo (ejecutable, evita confusión)
-  // Lunes: A full
-  // Martes: B full
-  // Miércoles: A lite + cardio (NO A completa)
-  // Jueves: B énfasis glúteo/espalda
-  // Viernes: A + tabata fuerte
-  // Sábado: core + postura/espalda (estética)
-  // Domingo: descarga activa (caminar + movilidad)
-
-  if (dow === 1) return workout_A_full_(name); // Lunes
-  if (dow === 2) return workout_B_full_(name); // Martes
-  if (dow === 3) return workout_A_lite_cardio_(name); // Miércoles
-  if (dow === 4) return workout_B_emphasis_(name); // Jueves
-  if (dow === 5) return workout_A_tabata_(name); // Viernes
-  if (dow === 6) return workout_core_posture_(name); // Sábado
-  return workout_recovery_(name); // Domingo
+  if (dow === 1) return workout_A_full_(name);
+  if (dow === 2) return workout_B_full_(name);
+  if (dow === 3) return workout_A_lite_cardio_(name);
+  if (dow === 4) return workout_B_emphasis_(name);
+  if (dow === 5) return workout_A_tabata_(name);
+  if (dow === 6) return workout_core_posture_(name);
+  return workout_recovery_(name);
 }
 
 function workout_A_full_(dayName) {
@@ -612,6 +613,42 @@ function workout_recovery_(dayName) {
 }
 
 /* =========================
+   RITUAL TEXT + HANDLER
+========================= */
+
+function coachRitualText_() {
+  const st = coachState_();
+  const p = coachParams_();
+  const th = coachTheme21_(st.cycle21);
+
+  const afirm = pickRandom_(YO_SOY_BANK);
+
+  // Ritual breve, ejecutable, sin mística exagerada:
+  // 1) respiración 60–90s
+  // 2) afirmación 3 veces lento
+  // 3) reencuadre 3 preguntas
+  // 4) micro-acción (1 cosa mínima)
+  return [
+    `🧘 [RITUAL] (${p.mins.ritual} min) — Ciclo ${st.cycle21} Día ${st.day21}/21`,
+    `📌 Regla del ciclo: ${th.rule}`,
+    "",
+    "1) Respiración (60–90s):",
+    "• Inhala 4s por nariz / exhala 6s por nariz × 6–8 veces.",
+    "",
+    "2) Yo soy (repítelo 3 veces, lento):",
+    `• ${afirm}`,
+    "",
+    "3) Reencuadre (responde mentalmente):",
+    "• ¿Qué puedo controlar ahora?",
+    "• ¿Qué estoy soltando hoy?",
+    "• ¿Cuál es la acción mínima que haré en 10 minutos?",
+    "",
+    "4) Acción mínima (elige 1):",
+    "• 10 min lectura / 10 min entreno / 10 min inglés output / registrar gastos (3 min).",
+  ].join("\n");
+}
+
+/* =========================
    TEXT BUILDERS (Morning/Rem/Night)
 ========================= */
 
@@ -640,13 +677,13 @@ function coachMorningText_() {
     `🗣️ Voz (${p.mins.voice} min) → “hmm” pecho + lectura modulada + pausas`,
     `🇬🇧 Inglés (${p.mins.english} min) → OUTPUT (hablar o escribir)`,
     `🎭 Storytelling (${p.mins.story} min) → mini historia 3 actos (30–60s)`,
-    `🧘 Ritual (${p.mins.ritual} min) → respiración + reencuadre + “yo soy”`,
+    `🧘 Ritual (${p.mins.ritual} min) → usa /ritual (te entrega 1 “yo soy” aleatorio)`,
     "",
     `💪 Entreno (${p.mins.workout}–40 min): ${w.label}`,
     `🎯 Músculos: ${w.muscles}`,
     "",
     "Reglas de estabilidad hoy:",
-    "• ❌ alcohol (siempre que puedas; si recaída: vuelve al mínimo, no te destruyas)",
+    "• ❌ alcohol (si recaída: vuelve al mínimo, no te destruyas)",
     "• ❌ redes/triggers que te rompen",
     "• ✔ pausa 90s antes de cualquier impulso",
   ].join("\n");
@@ -658,7 +695,7 @@ function coachReminderText_(slotIdx) {
   const th = coachTheme21_(st.cycle21);
 
   const reminders = [
-    `⏱️ [COACH] Micro-check: 10 min hoy valen más que 0. ¿Lectura (${p.mins.read}m) o 10m? Regla 21d: ${th.rule}`,
+    `⏱️ [COACH] Micro-check: 10 min hoy valen más que 0. ¿Lectura (${p.mins.read}m) o 10m? Regla: ${th.rule}`,
     `⏱️ [COACH] Micro-check: 5–10 min de voz o inglés OUTPUT ahora cambia el día (no esperes motivación).`,
     `⏱️ [COACH] Micro-check: si estás ansioso, camina 8–12 min + 5 respiraciones. Luego 1 tarea mínima.`,
     `⏱️ [COACH] Última ventana: entreno + resumen + cerrar sin impulsos (pausa 90s).`,
@@ -722,6 +759,7 @@ function coachStatusText_() {
     `ciclo 21: ${st.cycle21}/4 — día ${st.day21}/21 (${th.name})`,
     `sprint: ${sp.foco}`,
     `entreno hoy: ${w.label}`,
+    `yo-soy bank: ${YO_SOY_BANK.length} frases`,
     `mínimos: lectura ${p.mins.read}m | voz ${p.mins.voice}m | inglés ${p.mins.english}m | story ${p.mins.story}m | ritual ${p.mins.ritual}m | entreno ${p.mins.workout}m`,
   ].join("\n");
 }
@@ -787,7 +825,6 @@ function ensureCoachTriggers_() {
     .nearMinute(COACH_PM.m)
     .create();
 
-  // Sprint kickoff cada lunes
   deleteTriggersByHandler_("coachSprintKickoff_");
   ScriptApp.newTrigger("coachSprintKickoff_")
     .timeBased()
@@ -849,7 +886,6 @@ function coachSendNightCheck_() {
   }
 }
 
-/* reminders */
 function coachReminder_1_() {
   coachReminderDispatch_(0);
 }
@@ -891,7 +927,6 @@ function coachSprintKickoff_() {
   try {
     const st = coachState_();
     tgSendSafe_(chatId, coachSprintKickoffText_());
-    // incrementa semana (hasta 12)
     cfgSet_(COACH.WEEK_INDEX, String(Math.min(12, st.week + 1)));
   } catch (err) {
     console.error(err);
@@ -948,18 +983,11 @@ function coachScore_(obj) {
   );
 }
 
-/**
- * Aplica cierre nocturno:
- * - alcohol puede resetear ciclo 21 (según nivel)
- * - score bajo puede resetear ciclo 21 (no mes completo)
- * - impulses se guardan como contador (para conciencia)
- */
 function coachApplyNightResult_(obj) {
   const p = coachParams_();
   const score = coachScore_(obj);
   const drank = obj.alcohol === 1;
 
-  // guardar impulsos
   const prevImp = Number(cfgGet_(COACH.IMPULSE_COUNT, "0")) || 0;
   cfgSet_(COACH.IMPULSE_COUNT, String(prevImp + (obj.impulses || 0)));
 
@@ -968,10 +996,8 @@ function coachApplyNightResult_(obj) {
     return { action: "reset", reason: "alcohol", score: score };
   }
 
-  // penaliza si bebió pero no resetea (nivel suave)
   const effScore = drank && !p.alcoholResets ? Math.max(0, score - 1) : score;
 
-  // penaliza por impulsos ejecutados (cada 3 impulsos resta 1)
   const impulsePenalty = Math.floor((obj.impulses || 0) / 3);
   const scoreAfterImpulses = Math.max(0, effScore - impulsePenalty);
 
@@ -1009,6 +1035,7 @@ function coachApplyNightResult_(obj) {
    /nivel suave|estandar|desafiante
    /plan (forzado)
    /entreno (detalle)
+   /ritual (nuevo)
 ========================= */
 
 function coachHandleCommand_(chatId, messageId, cmd, arg) {
@@ -1081,6 +1108,11 @@ function coachHandleCommand_(chatId, messageId, cmd, arg) {
     return true;
   }
 
+  if (cmd === "/ritual") {
+    tgSendSafe_(chatId, coachRitualText_(), messageId);
+    return true;
+  }
+
   return false;
 }
 
@@ -1102,4 +1134,9 @@ function run_sendCoachRemindersNow() {
   coachReminderDispatch_(1);
   coachReminderDispatch_(2);
   coachReminderDispatch_(3);
+}
+function run_sendRitualNow() {
+  const chatId = getChatId_();
+  if (!chatId) return;
+  tgSendSafe_(chatId, coachRitualText_());
 }

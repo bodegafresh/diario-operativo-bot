@@ -214,22 +214,29 @@ function helpShort_() {
 
 function helpLong_() {
   return [
-    "Comandos:",
+    "📚 Comandos disponibles:",
     "",
+    "📝 Registro:",
     "• /diario → registrar día (responde al template)",
-    "• /pomodoro start|stop|status → 25/5 x4 + 15 (Lun–Vie 09–18 Chile)",
-    "• /coach on|off|status|reset21|reset90 → coach v3 (90 días + 21d cycles)",
-    "• /nivel suave|estandar|desafiante → dificultad del coach",
-    "• /plan → envía el plan del día ahora",
-    "• /entreno → envía entreno detallado de hoy",
-    "• /ritual → micro-ritual con 1 “yo soy” aleatorio (2–4 min)",
-    "• /status → estado del sistema",
-    "• /help → ayuda",
     "",
-    "Automático:",
-    "• Recordatorio diario para /diario",
-    "• 3 check-ins diarios (06–22)",
-    "• Coach: plan 08:30 + recordatorios 10:30/14:00/17:30/20:30 + check 22:30",
+    "🧘 Coach (90 días + ciclos 21d):",
+    "• /coach on|off|status|reset21|reset90",
+    "• /nivel suave|estandar|desafiante",
+    "• /plan → plan del día completo",
+    "• /entreno → rutina detallada de hoy",
+    "• /ritual → micro-ritual (4 afirmaciones + ejercicio)",
+    "",
+    "🍅 Productividad:",
+    "• /pomodoro start|stop|status → 25/5 x4 + 15 (Lun–Vie 09–18)",
+    "",
+    "ℹ️ Sistema:",
+    "• /status → estado de todos los módulos",
+    "• /help → esta ayuda",
+    "",
+    "🤖 Automático:",
+    "• Recordatorio diario para /diario (21:30)",
+    "• 3 check-ins emocionales diarios (horarios aleatorios 06–22)",
+    "• Coach: plan matinal (08:30) + 4 recordatorios aleatorios + cierre (22:30)",
   ].join("\n");
 }
 
@@ -244,14 +251,18 @@ function status_() {
     typeof coachEnabled_ === "function" ? coachEnabled_() : false;
 
   return [
-    "Estado:",
-    "auth: " + (auth ? "single-user (CHAT_ID fijado)" : "pendiente"),
-    "chat: private-only",
-    "checkins: " + (ck ? "ON" : "OFF"),
-    "diario reminder: " + (dr ? "ON" : "OFF"),
-    "pomodoro: " + (pomo ? "ON" : "OFF"),
-    "coach triggers: " + (coachTriggers ? "OK" : "OFF"),
-    "coach mode: " + (coachMode ? "ON" : "OFF"),
+    "📊 Estado del sistema:",
+    "",
+    "🔑 Autenticación:",
+    `• ${auth ? "✅ Usuario autorizado" : "❌ Pendiente configuración"}`,
+    "• 🔒 Solo chats privados",
+    "",
+    "🟢 Módulos activos:",
+    `• Check-ins: ${ck ? "✅ ON" : "❌ OFF"}`,
+    `• Recordatorio diario: ${dr ? "✅ ON" : "❌ OFF"}`,
+    `• Pomodoro: ${pomo ? "✅ ON" : "❌ OFF"}`,
+    `• Coach triggers: ${coachTriggers ? "✅ OK" : "❌ OFF"}`,
+    `• Coach mode: ${coachMode ? "✅ ON" : "❌ OFF"}`,
   ].join("\n");
 }
 

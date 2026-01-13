@@ -41,6 +41,10 @@ const COACH = {
 
   // Opcional: contador de “impulsos”
   IMPULSE_COUNT: "COACH_IMPULSE_COUNT_V3", // int
+
+  // Ritual: afirmaciones del día
+  RITUAL_DAILY_DATE: "COACH_RITUAL_DAILY_DATE_V3",
+  RITUAL_DAILY_AFFIRMATIONS: "COACH_RITUAL_DAILY_AFFIRMATIONS_V3",
 };
 
 const COACH_DEFAULT_LEVEL = "estandar";
@@ -51,42 +55,89 @@ const COACH_DEFAULT_LEVEL = "estandar";
    - pensadas para reconectar contigo (no “perfecto”, sí real)
 ========================= */
 
-const YO_SOY_BANK = [
-  // núcleo
-  "Yo soy un hombre que se elige.",
-  "Yo soy calma antes que reacción.",
-  "Yo soy disciplina simple: hago lo mínimo aunque no tenga ganas.",
-  "Yo soy consistente.",
-  "Yo soy dueño de mi atención.",
-  "Yo soy alguien que cumple su palabra (aunque sea pequeña).",
-  "Yo soy responsable de mi energía y mi dinero.",
-  "Yo soy un hombre que avanza: no perfecto, pero constante.",
+const YO_SOY_BANK = {
+  nucleo: [
+    "Yo soy un hombre que se elige.",
+    "Yo soy calma antes que reacción.",
+    "Yo soy disciplina simple: hago lo mínimo aunque no tenga ganas.",
+    "Yo soy consistente.",
+    "Yo soy dueño de mi atención.",
+    "Yo soy alguien que cumple su palabra (aunque sea pequeña).",
+    "Yo soy responsable de mi energía y mi dinero.",
+    "Yo soy un hombre que avanza: no perfecto, pero constante.",
+  ],
 
-  // emocional / impulsos
-  "Yo soy capaz de sentir sin actuar impulsivamente.",
-  "Yo soy más grande que un impulso de cinco minutos.",
-  "Yo soy paz incluso con incomodidad.",
-  "Yo soy alguien que se cuida cuando está vulnerable.",
-  "Yo soy alguien que no se abandona.",
+  emocional: [
+    "Yo soy capaz de sentir sin actuar impulsivamente.",
+    "Yo soy más grande que un impulso de cinco minutos.",
+    "Yo soy paz incluso con incomodidad.",
+    "Yo soy alguien que se cuida cuando está vulnerable.",
+    "Yo soy alguien que no se abandona.",
+  ],
 
-  // presencia / voz / postura
-  "Yo soy presencia: hablo lento y claro.",
-  "Yo soy postura firme y tranquila.",
-  "Yo soy control: respiro y decido.",
-  "Yo soy energía estable.",
+  presencia: [
+    "Yo soy presencia: hablo lento y claro.",
+    "Yo soy postura firme y tranquila.",
+    "Yo soy control: respiro y decido.",
+    "Yo soy energía estable.",
+  ],
 
-  // trabajo / finanzas
-  "Yo soy valor: aporto claridad.",
-  "Yo soy enfoque: termino lo que empiezo.",
-  "Yo soy alguien que cuida su dinero con respeto.",
-  "Yo soy un hombre que no compra para llenar vacíos.",
-  "Yo soy decisiones conscientes.",
-];
+  trabajo: [
+    "Yo soy valor: aporto claridad.",
+    "Yo soy enfoque: termino lo que empiezo.",
+    "Yo soy alguien que cuida su dinero con respeto.",
+    "Yo soy un hombre que no compra para llenar vacíos.",
+    "Yo soy decisiones conscientes.",
+  ],
+};
 
 function pickRandom_(arr) {
   if (!arr || !arr.length) return "";
   const i = Math.floor(Math.random() * arr.length);
   return arr[i];
+}
+
+/**
+ * Obtiene las 4 afirmaciones del día (una por categoría).
+ * Las mismas se mantienen durante todo el día, cambian cada día.
+ */
+function getDailyAffirmations_() {
+  const today = new Date();
+  const todayStr = Utilities.formatDate(
+    today,
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd"
+  );
+
+  const props = PropertiesService.getScriptProperties();
+  const savedDate = props.getProperty(COACH.RITUAL_DAILY_DATE);
+  const savedAffirmations = props.getProperty(COACH.RITUAL_DAILY_AFFIRMATIONS);
+
+  // Si ya tenemos afirmaciones para hoy, las devolvemos
+  if (savedDate === todayStr && savedAffirmations) {
+    try {
+      return JSON.parse(savedAffirmations);
+    } catch (e) {
+      // Si hay error al parsear, generamos nuevas
+    }
+  }
+
+  // Generar nuevas afirmaciones (una por categoría)
+  const affirmations = [
+    pickRandom_(YO_SOY_BANK.nucleo),
+    pickRandom_(YO_SOY_BANK.emocional),
+    pickRandom_(YO_SOY_BANK.presencia),
+    pickRandom_(YO_SOY_BANK.trabajo),
+  ];
+
+  // Guardar para el resto del día
+  props.setProperty(COACH.RITUAL_DAILY_DATE, todayStr);
+  props.setProperty(
+    COACH.RITUAL_DAILY_AFFIRMATIONS,
+    JSON.stringify(affirmations)
+  );
+
+  return affirmations;
 }
 
 /* =========================
@@ -621,30 +672,29 @@ function coachRitualText_() {
   const p = coachParams_();
   const th = coachTheme21_(st.cycle21);
 
-  const afirm = pickRandom_(YO_SOY_BANK);
+  const affirmations = getDailyAffirmations_();
 
-  // Ritual breve, ejecutable, sin mística exagerada:
-  // 1) respiración 60–90s
-  // 2) afirmación 3 veces lento
-  // 3) reencuadre 3 preguntas
-  // 4) micro-acción (1 cosa mínima)
   return [
-    `🧘 [RITUAL] (${p.mins.ritual} min) — Ciclo ${st.cycle21} Día ${st.day21}/21`,
-    `📌 Regla del ciclo: ${th.rule}`,
+    `🧘 [RITUAL] (${p.mins.ritual} min)`,
+    `🔁 Ciclo ${st.cycle21} • Día ${st.day21}/21`,
+    `📌 ${th.rule}`,
     "",
-    "1) Respiración (60–90s):",
-    "• Inhala 4s por nariz / exhala 6s por nariz × 6–8 veces.",
+    "👃 1) Respiración (60–90s):",
+    "• Inhala 4s nariz / exhala 6s nariz × 6–8 veces",
     "",
-    "2) Yo soy (repítelo 3 veces, lento):",
-    `• ${afirm}`,
+    "💬 2) Yo soy (repite cada una 3 veces, lento):",
+    `• ${affirmations[0]}`,
+    `• ${affirmations[1]}`,
+    `• ${affirmations[2]}`,
+    `• ${affirmations[3]}`,
     "",
-    "3) Reencuadre (responde mentalmente):",
+    "🧠 3) Reencuadre (responde mentalmente):",
     "• ¿Qué puedo controlar ahora?",
     "• ¿Qué estoy soltando hoy?",
-    "• ¿Cuál es la acción mínima que haré en 10 minutos?",
+    "• ¿Cuál es la acción mínima en 10 min?",
     "",
-    "4) Acción mínima (elige 1):",
-    "• 10 min lectura / 10 min entreno / 10 min inglés output / registrar gastos (3 min).",
+    "⚡ 4) Acción mínima (elige 1):",
+    "• 10m lectura | 10m entreno | 10m inglés | gastos (3m)",
   ].join("\n");
 }
 
@@ -661,31 +711,31 @@ function coachMorningText_() {
   const w = coachWorkoutForToday_();
 
   return [
-    `🧭 [COACH V3] Semana ${st.week}/12 — ${ph.phase} (${ph.note})`,
+    `🧭 [COACH] Semana ${st.week}/12 — ${ph.phase}`,
     `🔁 Ciclo 21d: ${st.day21}/21 — ${th.name}`,
-    `📌 Regla 21d: ${th.rule}`,
-    `🎯 Meta 21d: ${th.target}`,
+    `🎯 ${th.target}`,
+    `📌 ${th.rule}`,
     "",
-    `🧩 Sprint semanal: ${sp.foco}`,
-    `• Regla: ${sp.regla}`,
+    `🧩 Sprint: ${sp.foco}`,
+    `• ${sp.regla}`,
     `• Objetivo: ${sp.objetivo}`,
-    `• Micro: ${sp.micro}`,
+    `• Micro-hábito: ${sp.micro}`,
     "",
-    "Plan de hoy (simple y ejecutable):",
+    "📝 Plan de hoy:",
     "",
-    `📖 Lectura (${p.mins.read} min) → 2 frases de resumen + 1 idea explicable`,
-    `🗣️ Voz (${p.mins.voice} min) → “hmm” pecho + lectura modulada + pausas`,
-    `🇬🇧 Inglés (${p.mins.english} min) → OUTPUT (hablar o escribir)`,
-    `🎭 Storytelling (${p.mins.story} min) → mini historia 3 actos (30–60s)`,
+    `� Lectura (${p.mins.read}m) → 2 frases + 1 idea explicable`,
+    `🗣️ Voz (${p.mins.voice}m) → “hmm” pecho + modulación + pausas`,
+    `🇬🇧 Inglés (${p.mins.english}m) → OUTPUT (hablar o escribir)`,
+    `🎭 Story (${p.mins.story}m) → mini historia 3 actos (30–60s)`,
     `🧘 Ritual (${p.mins.ritual} min) → usa /ritual (te entrega 1 “yo soy” aleatorio)`,
     "",
-    `💪 Entreno (${p.mins.workout}–40 min): ${w.label}`,
+    `💪 Entreno (${p.mins.workout}–40m): ${w.label}`,
     `🎯 Músculos: ${w.muscles}`,
     "",
-    "Reglas de estabilidad hoy:",
-    "• ❌ alcohol (si recaída: vuelve al mínimo, no te destruyas)",
-    "• ❌ redes/triggers que te rompen",
-    "• ✔ pausa 90s antes de cualquier impulso",
+    "🛡️ Reglas hoy:",
+    "• ❌ Alcohol (recaída = vuelve al mínimo, no te destruyas)",
+    "• ❌ Redes/triggers que te rompen",
+    "• ✅ Pausa 90s antes de cualquier impulso",
   ].join("\n");
 }
 
@@ -695,10 +745,10 @@ function coachReminderText_(slotIdx) {
   const th = coachTheme21_(st.cycle21);
 
   const reminders = [
-    `⏱️ [COACH] Micro-check: 10 min hoy valen más que 0. ¿Lectura (${p.mins.read}m) o 10m? Regla: ${th.rule}`,
-    `⏱️ [COACH] Micro-check: 5–10 min de voz o inglés OUTPUT ahora cambia el día (no esperes motivación).`,
-    `⏱️ [COACH] Micro-check: si estás ansioso, camina 8–12 min + 5 respiraciones. Luego 1 tarea mínima.`,
-    `⏱️ [COACH] Última ventana: entreno + resumen + cerrar sin impulsos (pausa 90s).`,
+    `⏰ [MICRO-CHECK]\n\n10 min hoy valen más que 0.\n¿Lectura (${p.mins.read}m) o solo 10m?\n\n📌 ${th.rule}`,
+    `⏰ [MICRO-CHECK]\n\n5–10m de voz o inglés OUTPUT ahora.\nNo esperes motivación, hazlo.\n\n📌 ${th.rule}`,
+    `⏰ [MICRO-CHECK]\n\n¿Ansioso?\n1) Camina 8–12m + 5 respiraciones\n2) Luego 1 tarea mínima\n\n📌 ${th.rule}`,
+    `⏰ [ÚLTIMA VENTANA]\n\nEntreno + resumen + cerrar sin impulsos.\nPausa 90s antes de actuar.\n\n📌 ${th.rule}`,
   ];
   const i = clamp_(slotIdx, 0, reminders.length - 1);
   return reminders[i];
@@ -707,19 +757,19 @@ function coachReminderText_(slotIdx) {
 function coachNightCheckText_() {
   const st = coachState_();
   return [
-    `🌙 [COACH-CHECK] Cierre — Semana ${st.week}/12 | Ciclo ${st.cycle21} Día ${st.day21}/21`,
+    `🌙 [CIERRE] Semana ${st.week}/12 • Ciclo ${st.cycle21} Día ${st.day21}/21`,
     "",
-    "Responde a ESTE mensaje con 8 valores:",
+    "📊 Responde con 8 valores (0 o 1):",
     "entreno lectura voz ingles story ritual alcohol impulsos",
     "",
     "Ejemplos:",
-    "✅ 1 1 1 1 1 1 0 0",
-    "⚠️ 1 1 0 1 0 1 0 2",
-    "❌ 0 0 0 1 0 0 1 5",
+    "✅ 1 1 1 1 1 1 0 0 (día completo)",
+    "⚠️ 1 1 0 1 0 1 0 2 (parcial)",
+    "❌ 0 0 0 1 0 0 1 5 (día bajo)",
     "",
-    "Notas:",
-    "• alcohol: 1 = tomé (en estándar/desafiante puede resetear ciclo 21)",
-    "• impulsos: número (compras/empujes emocionales ejecutados sin pausa).",
+    "📝 Notas:",
+    "• alcohol: 1 = tomé (puede resetear ciclo 21)",
+    "• impulsos: número (compras/empujes emocionales sin pausa)",
   ].join("\n");
 }
 
@@ -730,14 +780,15 @@ function coachSprintKickoffText_() {
   return [
     `🧩 [SPRINT] Semana ${st.week}/12 — ${ph.phase}`,
     "",
-    `Foco: ${sp.foco}`,
-    "Regla:",
+    `🎯 Foco: ${sp.foco}`,
+    "",
+    "📌 Regla:",
     sp.regla,
     "",
-    "Objetivo:",
+    "🎯 Objetivo:",
     sp.objetivo,
     "",
-    "Micro-hábito:",
+    "⚡ Micro-hábito:",
     sp.micro,
   ].join("\n");
 }
@@ -751,16 +802,26 @@ function coachStatusText_() {
   const w = coachWorkoutForToday_();
 
   return [
-    "🧭 Coach V3 status",
-    `enabled: ${coachEnabled_() ? "ON" : "OFF"}`,
-    `nivel: ${p.level}`,
-    `inicio: ${st.startIso}`,
-    `semana: ${st.week}/12 (${ph.phase})`,
-    `ciclo 21: ${st.cycle21}/4 — día ${st.day21}/21 (${th.name})`,
-    `sprint: ${sp.foco}`,
-    `entreno hoy: ${w.label}`,
-    `yo-soy bank: ${YO_SOY_BANK.length} frases`,
-    `mínimos: lectura ${p.mins.read}m | voz ${p.mins.voice}m | inglés ${p.mins.english}m | story ${p.mins.story}m | ritual ${p.mins.ritual}m | entreno ${p.mins.workout}m`,
+    "🧭 Coach V3 - Estado",
+    "",
+    "🟢 Sistema:",
+    `• Estado: ${coachEnabled_() ? "✅ ON" : "❌ OFF"}`,
+    `• Nivel: ${p.level}`,
+    `• Inicio: ${st.startIso}`,
+    "",
+    "📊 Progreso:",
+    `• Semana: ${st.week}/12 (${ph.phase})`,
+    `• Ciclo 21d: ${st.cycle21}/4 — día ${st.day21}/21`,
+    `• Tema: ${th.name}`,
+    `• Sprint: ${sp.foco}`,
+    "",
+    "💪 Hoy:",
+    `• Entreno: ${w.label}`,
+    "",
+    "🎯 Mínimos diarios:",
+    `• Lectura: ${p.mins.read}m | Voz: ${p.mins.voice}m`,
+    `• Inglés: ${p.mins.english}m | Story: ${p.mins.story}m`,
+    `• Ritual: ${p.mins.ritual}m | Entreno: ${p.mins.workout}m`,
   ].join("\n");
 }
 

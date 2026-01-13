@@ -3,29 +3,69 @@
  * /diario prompt + parser flexible
  */
 
+// Estados de ánimo normalizados (en español para consistencia en análisis)
+const MOOD_OPTIONS = [
+  "calma", // Estado de paz y tranquilidad
+  "enfocado", // Concentrado y productivo
+  "energético", // Con energía positiva
+  "confianza", // Seguro de sí mismo
+  "motivado", // Con ganas de avanzar
+  "neutral", // Estado base, sin altibajos
+  "estable", // Equilibrado emocionalmente
+  "cansado", // Fatiga física o mental
+  "disperso", // Dificultad para concentrarse
+  "ansioso", // Inquietud o anticipación negativa
+  "inquieto", // Dificultad para estar en paz
+  "irritable", // Susceptible a molestias
+  "frustrado", // Bloqueado o estancado
+  "abrumado", // Sobrepasado por demandas
+  "vulnerable", // Expuesto emocionalmente
+  "impulsivo", // Dificultad para controlar impulsos
+  "desanimado", // Bajo ánimo o desmotivación
+  "gratitud", // Estado de agradecimiento
+];
+
 function diaryPrompt_() {
+  // Obtener fecha actual en formato YYYY-MM-DD
+  const today = new Date();
+  const dateStr = Utilities.formatDate(
+    today,
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd"
+  );
+
+  // Crear lista de moods en formato compacto (3 por línea)
+  const moodLines = [];
+  for (let i = 0; i < MOOD_OPTIONS.length; i += 3) {
+    const chunk = MOOD_OPTIONS.slice(i, i + 3);
+    moodLines.push("  " + chunk.join(" | "));
+  }
+
   return [
-    "[DIARIO] Responde a ESTE mensaje (Responder) con tu entrada.",
+    "📝 [DIARIO] Responde a ESTE mensaje con tu entrada.",
     "",
-    "Formato recomendado (simple):",
-    "date: YYYY-MM-DD",
+    "📋 Formato:",
+    `date: ${dateStr}`,
     "sleep_hours: 0-12",
     "energy: 1-5",
-    "mood: calm|neutral|low|...",
+    "mood: (ver opciones abajo)",
     "focus_type: trading|lectura|estudio|none",
     "focus_minutes: N",
     "training: gym:45, caminata:30 (o none:0)",
-    "alcohol: true|false (opcional units/context)",
+    "alcohol: true|false",
     "alcohol_units: N (opcional)",
     "alcohol_context: social|solo|unknown (opcional)",
-    "stalk: true|false (opcional intensity)",
+    "stalk: true|false",
     "stalk_intensity: low|mid|high (opcional)",
     "trading_trades: N",
     "game_commits: N",
     "feature_done: true|false",
     "notes: texto libre",
     "",
-    "Tip: pega tu bloque y el bot lo normaliza.",
+    "😊 Mood opciones (18):",
+    ...moodLines,
+    "",
+    "💡 Tip: copia, completa y pega. El bot lo normaliza.",
   ].join("\n");
 }
 
@@ -40,7 +80,46 @@ function parseDiaryText_(text) {
   const date = kv.date || kv.Date || isoDate_(now);
   const sleep_hours = toFloat_(kv.sleep_hours || kv.sleep);
   const energy = toInt_(kv.energy);
-  const mood = kv.mood || "unknown";
+
+  // Normalizar mood: convertir a minúsculas y validar contra opciones
+  let mood = String(kv.mood || "neutral")
+    .toLowerCase()
+    .trim();
+
+  // Mapeo de términos en inglés comunes a español
+  const moodMap = {
+    calm: "calma",
+    focused: "enfocado",
+    energetic: "energético",
+    confident: "confianza",
+    motivated: "motivado",
+    neutral: "neutral",
+    stable: "estable",
+    tired: "cansado",
+    scattered: "disperso",
+    anxious: "ansioso",
+    restless: "inquieto",
+    irritable: "irritable",
+    frustrated: "frustrado",
+    overwhelmed: "abrumado",
+    vulnerable: "vulnerable",
+    impulsive: "impulsivo",
+    discouraged: "desanimado",
+    grateful: "gratitud",
+    gratitude: "gratitud",
+    low: "desanimado",
+  };
+
+  // Aplicar mapeo si está en inglés
+  if (moodMap[mood]) {
+    mood = moodMap[mood];
+  }
+
+  // Si no está en la lista, mantener el valor pero avisar
+  if (!MOOD_OPTIONS.includes(mood) && mood !== "unknown") {
+    // Mantener el valor original pero podría logging aquí
+    mood = mood;
+  }
 
   const focus_type = kv.focus_type || kv.focus || "none";
   const focus_minutes = toInt_(kv.focus_minutes || kv.focus_min || kv.minutes);

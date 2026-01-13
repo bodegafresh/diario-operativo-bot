@@ -87,10 +87,64 @@ function scheduleDailyCheckins_() {
   );
 }
 
+/**
+ * Selecciona una pregunta de manera inteligente evitando repeticiones recientes.
+ * Usa un historial de las últimas N preguntas para asegurar distribución equitativa.
+ */
+function pickSmartQuestion_() {
+  const props = PropertiesService.getScriptProperties();
+  const historyJson = props.getProperty(PROP.CHECKIN_QUESTION_HISTORY);
+
+  // Historial de índices de preguntas usadas recientemente
+  let history = [];
+  if (historyJson) {
+    try {
+      history = JSON.parse(historyJson);
+    } catch (e) {
+      history = [];
+    }
+  }
+
+  // Tamaño del historial: evitar repetir hasta que se hayan usado todas las preguntas
+  const maxHistorySize = CHECKIN_PROMPTS.length;
+
+  // Filtrar preguntas que NO están en el historial reciente
+  const availableIndices = [];
+  for (let i = 0; i < CHECKIN_PROMPTS.length; i++) {
+    if (history.indexOf(i) === -1) {
+      availableIndices.push(i);
+    }
+  }
+
+  // Si ya usamos todas, resetear el historial (mantener solo las últimas 3)
+  if (availableIndices.length === 0) {
+    history = history.slice(-3);
+    for (let i = 0; i < CHECKIN_PROMPTS.length; i++) {
+      if (history.indexOf(i) === -1) {
+        availableIndices.push(i);
+      }
+    }
+  }
+
+  // Seleccionar aleatoriamente entre las preguntas disponibles
+  const selectedIndex =
+    availableIndices[Math.floor(Math.random() * availableIndices.length)];
+
+  // Actualizar historial
+  history.push(selectedIndex);
+  if (history.length > maxHistorySize) {
+    history = history.slice(-maxHistorySize);
+  }
+
+  props.setProperty(PROP.CHECKIN_QUESTION_HISTORY, JSON.stringify(history));
+
+  return CHECKIN_PROMPTS[selectedIndex];
+}
+
 function sendCheckin_() {
   const chatId = getChatId_();
   if (!chatId) return;
 
-  const q = pickRandom_(CHECKIN_PROMPTS);
+  const q = pickSmartQuestion_();
   tgSend_(chatId, checkinMessage_(q));
 }

@@ -242,13 +242,42 @@ export default {
 };
 ```
 
-### 6.3 Variable de entorno del Worker
+### 6.3 Variables de entorno del Worker
 
-En Worker → **Settings → Variables**:
+En Worker → **Settings → Variables** (o Environment Variables):
 
-| Name             | Value                        |
-| ---------------- | ---------------------------- |
-| `GAS_WEBAPP_URL` | tu `WEBAPP_URL` (`.../exec`) |
+| Name                | Type   | Value                                | Descripción                                              |
+| ------------------- | ------ | ------------------------------------ | -------------------------------------------------------- |
+| `GAS_WEBAPP_URL`    | Plain  | `https://script.google.com/.../exec` | **REQUERIDO**: URL del Web App de Apps Script            |
+| `TG_WEBHOOK_SECRET` | Secret | `tu-secret-token-generado`           | **OPCIONAL**: Token de validación de webhook de Telegram |
+
+#### Explicación de las variables:
+
+**`GAS_WEBAPP_URL`** (Requerida)
+
+- Es la URL del Web App que creaste en Apps Script (paso 4)
+- Formato: `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec`
+- El Worker enviará aquí todas las peticiones de Telegram
+- Tipo: **Plain text** (no es secreto)
+
+**`TG_WEBHOOK_SECRET`** (Opcional pero recomendada)
+
+- Token secreto para validar que las peticiones vienen de Telegram
+- Debe ser el mismo valor que configuraste en Apps Script Properties
+- Genera uno con: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
+- Tipo: **Secret** (se encripta en Cloudflare)
+- Si no la configuras, cualquiera que conozca la URL del Worker podría enviar peticiones
+
+#### Cómo configurar:
+
+1. En el dashboard de Cloudflare, ve a tu Worker
+2. Settings → Variables and Secrets
+3. Para cada variable:
+   - Click **Add variable**
+   - Name: nombre de la variable
+   - Value: el valor correspondiente
+   - Type: Plain text o Encrypt (para secrets)
+4. Click **Save and Deploy**
 
 Deploy → copia la URL `https://xxx.workers.dev/` → guárdala en `WORKER_URL` en Apps Script.
 

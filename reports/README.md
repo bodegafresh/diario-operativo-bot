@@ -33,14 +33,75 @@ Genera reportes HTML (dashboard + weekly + monthly) desde tus tabs con análisis
 
 ## Quickstart
 
+### Sin análisis AI (más rápido)
+
 ```bash
 cd reports
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# usando Excel (fixture o tu export)
+# Desde Excel local
 python -m src.cli --source excel --excel-path "../diario operativo.xlsx" --out output
+
+# Desde Google Sheets
+python -m src.cli --source sheets --spreadsheet-id "TU_SPREADSHEET_ID" --out output
+
+open output/index.html
+```
+
+### Con análisis AI (requiere OpenAI API)
+
+```bash
+# Configurar variables de entorno
+export OPENAI_API_KEY="sk-..."
+export OPENAI_MODEL="gpt-4o"  # opcional, por defecto es gpt-4o
+
+# Generar reportes con AI para las últimas 4 semanas
+python -m src.cli --source sheets --ai on --ai-weeks-back 4 --out output
+
+# Solo análisis de la semana actual
+python -m src.cli --source sheets --ai on --ai-weeks-back 1 --out output
+
+# Con idioma específico (es o en)
+python -m src.cli --source sheets --ai on --ai-weeks-back 2 --ai-lang es --out output
+```
+
+### Ejemplos completos
+
+```bash
+# Ejemplo 1: Excel sin AI (desarrollo/testing)
+python -m src.cli \
+  --source excel \
+  --excel-path "datos/diario.xlsx" \
+  --out output \
+  --tz "America/Santiago"
+
+# Ejemplo 2: Google Sheets con AI (producción)
+python -m src.cli \
+  --source sheets \
+  --spreadsheet-id "1ABC123..." \
+  --creds "service-account.json" \
+  --ai on \
+  --ai-weeks-back 4 \
+  --ai-lang es \
+  --out output
+
+# Ejemplo 3: Usando .env (recomendado)
+# Crear .env con las variables necesarias
+cat > .env << EOF
+SOURCE=sheets
+GOOGLE_SHEETS_SPREADSHEET_ID=1ABC123...
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
+AI=on
+AI_WEEKS_BACK=4
+AI_LANG=es
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o
+EOF
+
+# Ejecutar sin argumentos (usa .env)
+python -m src.cli
 
 open output/index.html
 ```

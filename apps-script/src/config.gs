@@ -20,6 +20,7 @@ const PROP = {
   POMO_PHASE: "POMO_PHASE",
   POMO_CYCLE: "POMO_CYCLE",
   POMO_END_MS: "POMO_END_MS",
+  POMO_LAST_DATE: "POMO_LAST_DATE",
 
   LAST_UPDATE_ID: "LAST_UPDATE_ID",
   CHECKIN_QUESTION_HISTORY: "CHECKIN_QUESTION_HISTORY",
@@ -42,8 +43,12 @@ const DEFAULTS = {
   DIARY_REMINDER_H: 21,
   DIARY_REMINDER_M: 30,
 
+  // Pomodoro: horario permitido (formato 24h)
   POMO_START_H: 9,
-  POMO_END_H: 18,
+  POMO_END_H: 19,
+  // Pomodoro: días permitidos (1=Lun, 2=Mar, ..., 5=Vie, 6=Sáb, 0=Dom)
+  // Por defecto solo Lun-Vie
+  POMO_ALLOWED_DAYS: [1, 2, 3, 4, 5],
 
   POMO_WORK_MIN: 25,
   POMO_SHORT_BREAK_MIN: 5,

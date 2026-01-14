@@ -7,11 +7,36 @@ function pomodoroStart_() {
   cfgSet_(PROP.POMO_ENABLED, "true");
   if (!cfgGet_(PROP.POMO_PHASE, "")) initPomodoroState_();
   ensurePomodoroTickTrigger_();
+  return getPomodoroConfigMessage_();
 }
 
 function pomodoroStop_() {
   cfgSet_(PROP.POMO_ENABLED, "false");
   deleteTriggersByHandler_("pomodoroTick_");
+}
+
+/**
+ * Genera el mensaje descriptivo del ciclo de pomodoro según configuración.
+ */
+function getPomodoroConfigMessage_() {
+  const days = DEFAULTS.POMO_ALLOWED_DAYS;
+  const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+  let daysText = "";
+  if (days.length === 7) {
+    daysText = "todos los días";
+  } else if (days.length === 5 && days.includes(1) && days.includes(5)) {
+    daysText = "Lun–Vie";
+  } else if (days.length === 2 && days.includes(0) && days.includes(6)) {
+    daysText = "fines de semana";
+  } else {
+    daysText = days.map((d) => dayNames[d]).join(", ");
+  }
+
+  const startH = String(DEFAULTS.POMO_START_H).padStart(2, "0");
+  const endH = String(DEFAULTS.POMO_END_H).padStart(2, "0");
+
+  return `🍅 Pomodoro ON.\nCiclo: ${DEFAULTS.POMO_WORK_MIN}/${DEFAULTS.POMO_SHORT_BREAK_MIN} x${DEFAULTS.POMO_SET_SIZE} + ${DEFAULTS.POMO_LONG_BREAK_MIN} min.\nActivo: ${daysText} ${startH}:00–${endH}:00.`;
 }
 
 function pomodoroStatus_() {
@@ -47,9 +72,15 @@ function pomodoroTick_() {
 
   const now = new Date();
 
-  if (!isWeekdayChile_(now)) return;
+  // Verificar si es un día permitido
+  if (!isAllowedPomodoroDay_(now)) return;
+
+  // Verificar ventana horaria
   if (!withinWindow_(now, DEFAULTS.POMO_START_H, 0, DEFAULTS.POMO_END_H, 0))
     return;
+
+  // Resetear contador si es un nuevo día
+  resetPomodoroIfNewDay_(now);
 
   let phase = cfgGet_(PROP.POMO_PHASE, "");
   if (!phase) initPomodoroState_();
@@ -130,5 +161,32 @@ function notifyPomodoroPhase_(chatId, phase, cycle) {
       chatId,
       `🧘 Descanso largo — ${DEFAULTS.POMO_LONG_BREAK_MIN} min.\nReset suave. Vuelve liviano.`
     );
+  }
+}
+
+/**
+ * Verifica si el día actual está en la lista de días permitidos.
+ * Se usa getDay() que retorna: 0=Domingo, 1=Lunes, ..., 6=Sábado
+ */
+function isAllowedPomodoroDay_(date) {
+  const dayOfWeek = date.getDay();
+  return DEFAULTS.POMO_ALLOWED_DAYS.includes(dayOfWeek);
+}
+
+/**
+ * Resetea el contador de pomodoros si detecta que cambió el día.
+ * Compara la fecha actual (YYYY-MM-DD) con POMO_LAST_DATE.
+ */
+function resetPomodoroIfNewDay_(now) {
+  const today = isoDate_(now);
+  const lastDate = cfgGet_(PROP.POMO_LAST_DATE, "");
+
+  if (lastDate && lastDate !== today) {
+    // Nuevo día detectado, reiniciar estado
+    initPomodoroState_();
+    cfgSet_(PROP.POMO_LAST_DATE, today);
+  } else if (!lastDate) {
+    // Primera vez, guardar fecha actual
+    cfgSet_(PROP.POMO_LAST_DATE, today);
   }
 }

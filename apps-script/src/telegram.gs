@@ -304,12 +304,8 @@ function handleCommand_(chatId, messageId, text) {
 
   if (cmd === "/pomodoro") {
     if (arg === "start" || arg === "on") {
-      pomodoroStart_();
-      tgSend_(
-        chatId,
-        "🍅 Pomodoro ON. Te avisaré cada cambio de fase (solo Lun–Vie 09–18).",
-        messageId
-      );
+      const msg = pomodoroStart_();
+      tgSend_(chatId, msg, messageId);
       return;
     }
     if (arg === "stop" || arg === "off") {

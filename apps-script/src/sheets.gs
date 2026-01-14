@@ -68,23 +68,11 @@ function ensureCoreSheets_() {
     "meta",
   ]);
 
-  // Coach V2 (una sola hoja)
-  getOrCreateSheet_(SHEETS.COACH, [
-    "timestamp",
-    "date",
-    "level",
-    "day21",
-    "week",
-    "train_day14",
-    "score_0_6",
-    "alcohol",
-    "workout",
-    "read",
-    "voice",
-    "english",
-    "story",
-    "ritual",
-  ]);
+  // Coach V2 (una sola hoja - legacy, ya no se usa)
+  // getOrCreateSheet_(SHEETS.COACH, [...]);
+
+  // Coach V3 (misma hoja "Coach", headers actualizados)
+  ensureCoachV3Sheet_();
 }
 
 function fullNameFromMsg_(msg) {
@@ -172,13 +160,7 @@ function logPomodoro_(event, phase, cycle, meta) {
 
 /** Asegura hoja CoachV3 con headers (llámalo desde ensureCoreSheets_()) */
 function ensureCoachV3Sheet_() {
-  // Si ya tienes un enum SHEETS, agrega: SHEETS.COACH_V3 = "CoachV3"
-  const sheetName =
-    typeof SHEETS !== "undefined" && SHEETS.COACH_V3
-      ? SHEETS.COACH_V3
-      : "CoachV3";
-
-  getOrCreateSheet_(sheetName, [
+  getOrCreateSheet_(SHEETS.COACH_V3, [
     "timestamp",
     "date",
     "level",
@@ -223,11 +205,7 @@ function b01_(v) {
  * @param {Object} data { level, score, drank, impulses, tasks, tier?, note? }
  */
 function appendCoachV3Log_(ts, data) {
-  const sheetName =
-    typeof SHEETS !== "undefined" && SHEETS.COACH_V3
-      ? SHEETS.COACH_V3
-      : "CoachV3";
-  const sh = getOrCreateSheet_(sheetName, null);
+  const sh = getOrCreateSheet_(SHEETS.COACH_V3, null);
 
   // Estado del coach v3 (viene de coach.gs)
   const st = typeof coachState_ === "function" ? coachState_() : null;

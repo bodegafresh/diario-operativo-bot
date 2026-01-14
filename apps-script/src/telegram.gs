@@ -93,7 +93,7 @@ function handleMessage_(msg) {
     return;
   }
 
-  if (prompt.indexOf("[COACH-CHECK]") !== -1) {
+  if (prompt.indexOf("[CIERRE]") !== -1) {
     const parsed = parseCoachCheckAnswer_(text);
     if (!parsed) {
       tgSend_(

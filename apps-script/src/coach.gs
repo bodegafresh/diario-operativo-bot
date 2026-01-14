@@ -1052,7 +1052,22 @@ function coachApplyNightResult_(obj) {
   const prevImp = Number(cfgGet_(COACH.IMPULSE_COUNT, "0")) || 0;
   cfgSet_(COACH.IMPULSE_COUNT, String(prevImp + (obj.impulses || 0)));
 
+  // Guardar log ANTES de procesar resets, para capturar el estado actual
+  const currentState = coachState_();
+
   if (drank && p.alcoholResets) {
+    // Guardar antes del reset
+    if (typeof appendCoachV3Log_ === "function") {
+      appendCoachV3Log_(new Date(), {
+        level: p.level,
+        score: score,
+        drank: drank,
+        impulses: obj.impulses || 0,
+        tasks: obj,
+        tier: "reset_alcohol",
+        note: "Reset por alcohol",
+      });
+    }
     coachReset21_();
     return { action: "reset", reason: "alcohol", score: score };
   }
@@ -1063,6 +1078,18 @@ function coachApplyNightResult_(obj) {
   const scoreAfterImpulses = Math.max(0, effScore - impulsePenalty);
 
   if (scoreAfterImpulses <= p.resetMax) {
+    // Guardar antes del reset
+    if (typeof appendCoachV3Log_ === "function") {
+      appendCoachV3Log_(new Date(), {
+        level: p.level,
+        score: scoreAfterImpulses,
+        drank: drank,
+        impulses: obj.impulses || 0,
+        tasks: obj,
+        tier: "reset_score",
+        note: "Reset por score bajo",
+      });
+    }
     coachReset21_();
     return { action: "reset", reason: "score", score: scoreAfterImpulses };
   }
@@ -1070,6 +1097,7 @@ function coachApplyNightResult_(obj) {
   const adv = coachAdvanceDay_();
   const tier = scoreAfterImpulses < p.validMin ? "fragile" : "valid";
 
+  // Guardar en caso de avance normal
   if (typeof appendCoachV3Log_ === "function") {
     appendCoachV3Log_(new Date(), {
       level: p.level,
@@ -1077,6 +1105,7 @@ function coachApplyNightResult_(obj) {
       drank: drank,
       impulses: obj.impulses || 0,
       tasks: obj,
+      tier: tier,
     });
   }
 

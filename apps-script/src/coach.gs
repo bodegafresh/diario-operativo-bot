@@ -917,7 +917,10 @@ function coachSendMorningInternal_(force) {
 
   try {
     tgSendSafe_(chatId, coachMorningText_());
-    cfgSet_(COACH.LAST_AM, today);
+    // Solo marcar LAST_AM si es automático (no forzado)
+    if (!force) {
+      cfgSet_(COACH.LAST_AM, today);
+    }
   } catch (err) {
     console.error(err);
     try {

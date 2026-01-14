@@ -39,6 +39,30 @@ function getPomodoroConfigMessage_() {
   return `🍅 Pomodoro ON.\nCiclo: ${DEFAULTS.POMO_WORK_MIN}/${DEFAULTS.POMO_SHORT_BREAK_MIN} x${DEFAULTS.POMO_SET_SIZE} + ${DEFAULTS.POMO_LONG_BREAK_MIN} min.\nActivo: ${daysText} ${startH}:00–${endH}:00.`;
 }
 
+/**
+ * Genera descripción corta del ciclo para /help.
+ */
+function getPomodoroShortDesc_() {
+  const days = DEFAULTS.POMO_ALLOWED_DAYS;
+  let daysText = "";
+  if (days.length === 7) {
+    daysText = "todos los días";
+  } else if (days.length === 5 && days.includes(1) && days.includes(5)) {
+    daysText = "Lun–Vie";
+  } else if (days.length === 2 && days.includes(0) && days.includes(6)) {
+    daysText = "fin de semana";
+  } else {
+    const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    daysText = days.map((d) => dayNames[d]).join(", ");
+  }
+
+  return `${DEFAULTS.POMO_WORK_MIN}/${DEFAULTS.POMO_SHORT_BREAK_MIN} x${
+    DEFAULTS.POMO_SET_SIZE
+  } + ${DEFAULTS.POMO_LONG_BREAK_MIN} (${daysText} ${String(
+    DEFAULTS.POMO_START_H
+  ).padStart(2, "0")}–${String(DEFAULTS.POMO_END_H).padStart(2, "0")})`;
+}
+
 function pomodoroStatus_() {
   const enabled = cfgGet_(PROP.POMO_ENABLED, "false") === "true";
   if (!enabled) return "Pomodoro: OFF. Usa /pomodoro start.";

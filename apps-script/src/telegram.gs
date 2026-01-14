@@ -227,7 +227,7 @@ function helpLong_() {
     "• /ritual → micro-ritual (4 afirmaciones + ejercicio)",
     "",
     "🍅 Productividad:",
-    "• /pomodoro start|stop|status → 25/5 x4 + 15 (Lun–Vie 09–18)",
+    `• /pomodoro start|stop|status → ${getPomodoroShortDesc_()}`,
     "",
     "ℹ️ Sistema:",
     "• /status → estado de todos los módulos",

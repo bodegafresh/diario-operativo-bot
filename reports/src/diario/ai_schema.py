@@ -3,6 +3,17 @@ from __future__ import annotations
 
 AI_INSIGHTS_SCHEMA_EXAMPLE = {
     "theme": "string (tema central de la semana)",
+    "week_comparison": {
+        "improvements": [
+            "métrica: valor_anterior → valor_actual (+delta) - explicación breve"
+        ],
+        "regressions": [
+            "métrica: valor_anterior → valor_actual (-delta) - explicación breve"
+        ],
+        "maintained_patterns": [
+            "patrón que se mantiene consistente entre semanas"
+        ],
+    },
     "evidence": {
         "checkins_quotes": [
             "short quote from answers (<= 140 chars)",
@@ -11,34 +22,17 @@ AI_INSIGHTS_SCHEMA_EXAMPLE = {
             "short quote from notes (<= 140 chars)",
         ],
     },
-    "checkins_deep_dive": {
-        "top_loops": [
-            {
-                "loop": "pensamiento recurrente (1 frase)",
-                "emotion": "emoción dominante",
-                "trigger": "disparador típico",
-                "body_signal": "señal corporal si aparece",
-                "evidence_quote": "1 cita corta",
-                "reframe": "reencuadre útil",
-                "micro_action_2min": "acción ejecutable en 2 minutos",
-            }
-        ],
-        "top_triggers": [
-            {
-                "trigger": "gatillante",
-                "pattern": "cómo se manifiesta",
-                "countermove": "qué hacer en 90s",
-            }
-        ],
-        "questions_summary": [
-            {
-                "question": "pregunta del checkin",
-                "count": 3,
-                "avg_intensity": 6.2,
-                "dominant_topics": ["ansiedad", "anticipación"],
-            }
-        ],
-    },
+    "checkins_deep_dive": [
+        {
+            "interpretation": "Loop mecánico: Cuando [situación] → pienso/hago [X] → pierdo [Y tiempo/foco]",
+            "trigger_guess": "Disparador concreto (situación/pensamiento/frase interna específica)",
+            "body_signal": "Señal corporal clara (estómago/pecho/garganta/manos/respiración)",
+            "counter_move_2_5_min": "Acción específica: Cuando [X], hacer [Y], esperar [Z]",
+        },
+        # TODOS los campos son obligatorios
+        # Máximo 2-3 loops distintos (no variantes del mismo)
+        # Si no hay datos suficientes, genera MENOS deep dives pero COMPLETOS
+    ],
     "daily_patterns": {
         "sleep_energy": "insight",
         "alcohol_stalk": "insight",

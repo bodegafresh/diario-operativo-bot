@@ -22,7 +22,7 @@ def build_weekly_ai_payload(
 ) -> Dict[str, Any]:
     """
     Payload para IA:
-    - Daily: últimos ~14 días (para contexto semanal + tendencia)
+    - Daily: semana actual + semana anterior (para comparación)
     - Checkins: últimos N checkins (con pregunta+respuesta+intensidad)
     """
     # ---- Daily (kpis.daily_table) ----
@@ -33,12 +33,22 @@ def build_weekly_ai_payload(
         daily_df = daily_df.sort_values("date")
 
     # Para weeks_back: filtra por week id si existe (ej: 2026-W02)
+    daily_week = pd.DataFrame()
+    daily_week_prev = pd.DataFrame()
+    target_week = None
+    prev_week = None
+
     if "week" in daily_df.columns and len(daily_df) > 0:
         weeks = sorted(daily_df["week"].dropna().unique().tolist())
         if weeks:
             idx = max(0, len(weeks) - 1 - int(weeks_back))
             target_week = weeks[idx]
             daily_week = daily_df[daily_df["week"] == target_week].copy()
+
+            # Obtener semana anterior si existe
+            if idx > 0:
+                prev_week = weeks[idx - 1]
+                daily_week_prev = daily_df[daily_df["week"] == prev_week].copy()
         else:
             daily_week = daily_df.tail(14).copy()
     else:
@@ -67,6 +77,14 @@ def build_weekly_ai_payload(
     for _, row in daily_week.iterrows():
         rec = {k: to_jsonable(v) for k, v in row.items()}
         daily_records.append(rec)
+
+    # Procesar semana anterior
+    daily_records_prev = []
+    if not daily_week_prev.empty:
+        daily_week_prev = daily_week_prev[daily_cols].copy()
+        for _, row in daily_week_prev.iterrows():
+            rec = {k: to_jsonable(v) for k, v in row.items()}
+            daily_records_prev.append(rec)
 
     # ---- Checkins (data_bundle.checkins) ----
     chk = data_bundle.checkins.copy() if getattr(data_bundle, "checkins", None) is not None else pd.DataFrame()
@@ -102,8 +120,11 @@ def build_weekly_ai_payload(
         "meta": {
             "timezone": tz,
             "weeks_back": int(weeks_back),
+            "current_week": str(target_week) if target_week else None,
+            "previous_week": str(prev_week) if prev_week else None,
         },
-        "daily": daily_records,
+        "daily_current_week": daily_records,
+        "daily_previous_week": daily_records_prev,
         "checkins": checkins_records,
     }
     return payload

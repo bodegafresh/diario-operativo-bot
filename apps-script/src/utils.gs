@@ -94,3 +94,80 @@ function randomTimesSpaced_(start, end, count, minGapMin) {
   chosen.sort((a, b) => a.getTime() - b.getTime());
   return chosen;
 }
+
+
+function dbgTraceId_(chatId, messageId) {
+  return `${chatId}-${messageId}-${Date.now()}`;
+}
+
+function dbgNowMs_() {
+  return new Date().getTime();
+}
+
+function dbgTrunc_(s, n) {
+  s = String(s || "");
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+function dbgEnsureSheet_(name, headers) {
+  const ss = SpreadsheetApp.openById(getSpreadsheetId_());
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) sh.appendRow(headers);
+  return sh;
+}
+
+// Debug central: log + sheet
+function dbgMark_(traceId, step, chatId, messageId, ok, data, startedAtMs) {
+  const elapsed = startedAtMs ? (dbgNowMs_() - startedAtMs) : "";
+  const payload = {
+    traceId,
+    step,
+    ok: ok ? "OK" : "FAIL",
+    chatId: String(chatId || ""),
+    messageId: String(messageId || ""),
+    elapsed_ms: elapsed,
+    data: dbgTrunc_(data ? JSON.stringify(data) : "", 900),
+    at: new Date().toISOString(),
+  };
+
+  // Logs GAS
+  console.log("[DBG]", JSON.stringify(payload));
+
+  // Sheet Debug
+  const sh = dbgEnsureSheet_("Debug", [
+    "at",
+    "trace_id",
+    "step",
+    "ok",
+    "chat_id",
+    "message_id",
+    "elapsed_ms",
+    "data",
+  ]);
+  sh.appendRow([
+    payload.at,
+    payload.traceId,
+    payload.step,
+    payload.ok,
+    payload.chatId,
+    payload.messageId,
+    payload.elapsed_ms,
+    payload.data,
+  ]);
+
+  return payload;
+}
+
+function dbgFail_(traceId, step, chatId, messageId, err, startedAtMs, extra) {
+  const msg = err && err.message ? err.message : String(err);
+  return dbgMark_(
+    traceId,
+    step,
+    chatId,
+    messageId,
+    false,
+    Object.assign({ error: msg }, extra || {}),
+    startedAtMs
+  );
+}

@@ -16,35 +16,10 @@
 ========================= */
 
 const COACH = {
-  ENABLED: "COACH_ENABLED_V3", // true/false
-  LEVEL: "COACH_LEVEL_V3", // suave|estandar|desafiante
-  START_ISO: "COACH_START_ISO_V3", // yyyy-mm-dd
-
-  // 90d
-  WEEK_INDEX: "COACH_WEEK_INDEX_V3", // 1..12 (incrementa cada lunes)
-  DAY90: "COACH_DAY90_V3", // 1..90 (opcional)
-
-  // Ciclo 21d (para cambios conductuales)
-  DAY21: "COACH_DAY21_V3", // 1..21 (incrementa diario)
-  CYCLE21: "COACH_CYCLE21_V3", // 1..4 (1..3: ciclos; 4: integración)
-
-  // Entreno A/B tracking (14 días), pero la rutina real se decide por día semana
-  TRAIN_DAY14: "COACH_TRAIN_DAY14_V3", // 1..14
-
-  // Dedupes
-  LAST_AM: "COACH_LAST_AM_V3",
-  LAST_PM: "COACH_LAST_PM_V3",
-  LAST_REM_1: "COACH_LAST_REM_1_V3",
-  LAST_REM_2: "COACH_LAST_REM_2_V3",
-  LAST_REM_3: "COACH_LAST_REM_3_V3",
-  LAST_REM_4: "COACH_LAST_REM_4_V3",
-
-  // Opcional: contador de “impulsos”
-  IMPULSE_COUNT: "COACH_IMPULSE_COUNT_V3", // int
-
-  // Ritual: afirmaciones del día
-  RITUAL_DAILY_DATE: "COACH_RITUAL_DAILY_DATE_V3",
-  RITUAL_DAILY_AFFIRMATIONS: "COACH_RITUAL_DAILY_AFFIRMATIONS_V3",
+  ENABLED: "COACH_ENABLED",
+  LEVEL: "COACH_LEVEL",
+  START_ISO: "COACH_START_ISO",
+  // NOTE: State tracking moved to Sheets "CoachState" table
 };
 
 const COACH_DEFAULT_LEVEL = "estandar";
@@ -146,10 +121,10 @@ function getDailyAffirmations_() {
 
 const COACH_AM = { h: 8, m: 30 };
 const COACH_REMINDERS = [
-  { key: COACH.LAST_REM_1, h: 10, m: 30 },
-  { key: COACH.LAST_REM_2, h: 14, m: 0 },
-  { key: COACH.LAST_REM_3, h: 17, m: 30 },
-  { key: COACH.LAST_REM_4, h: 20, m: 30 },
+  { num: 1, h: 10, m: 30 },
+  { num: 2, h: 14, m: 0 },
+  { num: 3, h: 17, m: 30 },
+  { num: 4, h: 20, m: 30 },
 ];
 const COACH_PM = { h: 22, m: 30 };
 
@@ -242,20 +217,20 @@ function coachState_() {
     cfgSet_(COACH.START_ISO, startIso);
   }
 
-  let week = Number(cfgGet_(COACH.WEEK_INDEX, "1")) || 1;
+  let week = getCoachWeekIndex_();
   if (week < 1) week = 1;
   if (week > 12) week = 12;
 
-  let day21 = Number(cfgGet_(COACH.DAY21, "1")) || 1;
+  let day21 = getCoachDay21_();
   day21 = clamp_(day21, 1, 21);
 
-  let cycle21 = Number(cfgGet_(COACH.CYCLE21, "1")) || 1;
+  let cycle21 = getCoachCycle21_();
   cycle21 = clamp_(cycle21, 1, 4);
 
-  let trainDay = Number(cfgGet_(COACH.TRAIN_DAY14, "1")) || 1;
+  let trainDay = getCoachTrainDay14_();
   trainDay = clamp_(trainDay, 1, 14);
 
-  let day90 = Number(cfgGet_(COACH.DAY90, "1")) || 1;
+  let day90 = getCoachDay90_();
   day90 = clamp_(day90, 1, 90);
 
   return { startIso, week, day21, cycle21, trainDay, day90 };
@@ -270,17 +245,17 @@ function coachSetLevel_(lvl) {
 }
 
 function coachReset21_() {
-  cfgSet_(COACH.DAY21, "1");
+  setCoachDay21_(1);
 }
 
 function coachReset90_() {
   cfgSet_(COACH.START_ISO, isoDate_(new Date()));
-  cfgSet_(COACH.WEEK_INDEX, "1");
-  cfgSet_(COACH.DAY21, "1");
-  cfgSet_(COACH.CYCLE21, "1");
-  cfgSet_(COACH.TRAIN_DAY14, "1");
-  cfgSet_(COACH.DAY90, "1");
-  cfgSet_(COACH.IMPULSE_COUNT, "0");
+  setCoachWeekIndex_(1);
+  setCoachDay21_(1);
+  setCoachCycle21_(1);
+  setCoachTrainDay14_(1);
+  setCoachDay90_(1);
+  setCoachImpulseCount_(0);
 }
 
 function coachAdvanceDay_() {
@@ -288,11 +263,11 @@ function coachAdvanceDay_() {
 
   let next90 = st.day90 + 1;
   if (next90 > 90) next90 = 90;
-  cfgSet_(COACH.DAY90, String(next90));
+  setCoachDay90_(next90);
 
   let next14 = st.trainDay + 1;
   if (next14 > 14) next14 = 1;
-  cfgSet_(COACH.TRAIN_DAY14, String(next14));
+  setCoachTrainDay14_(next14);
 
   let next21 = st.day21 + 1;
   let nextCycle = st.cycle21;
@@ -300,9 +275,9 @@ function coachAdvanceDay_() {
   if (next21 > 21) {
     next21 = 1;
     nextCycle = Math.min(4, nextCycle + 1);
-    cfgSet_(COACH.CYCLE21, String(nextCycle));
+    setCoachCycle21_(nextCycle);
   }
-  cfgSet_(COACH.DAY21, String(next21));
+  setCoachDay21_(next21);
 
   return { next90, next14, next21, nextCycle };
 }
@@ -913,13 +888,13 @@ function coachSendMorningInternal_(force) {
   if (!chatId) return;
 
   const today = isoDate_(new Date());
-  if (!force && cfgGet_(COACH.LAST_AM, "") === today) return;
+  if (!force && getCoachLastAM_() === today) return;
 
   try {
     tgSendSafe_(chatId, coachMorningText_());
     // Solo marcar LAST_AM si es automático (no forzado)
     if (!force) {
-      cfgSet_(COACH.LAST_AM, today);
+      setCoachLastAM_(today);
     }
   } catch (err) {
     console.error(err);
@@ -940,11 +915,11 @@ function coachSendNightCheck_() {
   if (!chatId) return;
 
   const today = isoDate_(new Date());
-  if (cfgGet_(COACH.LAST_PM, "") === today) return;
+  if (getCoachLastPM_() === today) return;
 
   try {
     tgSendSafe_(chatId, coachNightCheckText_());
-    cfgSet_(COACH.LAST_PM, today);
+    setCoachLastPM_(today);
   } catch (err) {
     console.error(err);
   }
@@ -970,14 +945,15 @@ function coachReminderDispatch_(slotIdx) {
   if (!chatId) return;
 
   const today = isoDate_(new Date());
-  const key = COACH_REMINDERS[slotIdx] && COACH_REMINDERS[slotIdx].key;
-  if (!key) return;
+  const reminder = COACH_REMINDERS[slotIdx];
+  if (!reminder) return;
 
-  if (cfgGet_(key, "") === today) return;
+  const lastReminderDate = getCoachLastReminder_(reminder.num);
+  if (lastReminderDate === today) return;
 
   try {
     tgSend_(chatId, coachReminderText_(slotIdx));
-    cfgSet_(key, today);
+    setCoachLastReminder_(reminder.num, today);
   } catch (err) {
     console.error(err);
   }
@@ -991,7 +967,7 @@ function coachSprintKickoff_() {
   try {
     const st = coachState_();
     tgSendSafe_(chatId, coachSprintKickoffText_());
-    cfgSet_(COACH.WEEK_INDEX, String(Math.min(12, st.week + 1)));
+    setCoachWeekIndex_(Math.min(12, st.week + 1));
   } catch (err) {
     console.error(err);
   }
@@ -1052,8 +1028,8 @@ function coachApplyNightResult_(obj) {
   const score = coachScore_(obj);
   const drank = obj.alcohol === 1;
 
-  const prevImp = Number(cfgGet_(COACH.IMPULSE_COUNT, "0")) || 0;
-  cfgSet_(COACH.IMPULSE_COUNT, String(prevImp + (obj.impulses || 0)));
+  const prevImp = getCoachImpulseCount_();
+  setCoachImpulseCount_(prevImp + (obj.impulses || 0));
 
   // Guardar log ANTES de procesar resets, para capturar el estado actual
   const currentState = coachState_();

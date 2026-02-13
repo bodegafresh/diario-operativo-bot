@@ -72,16 +72,57 @@ function ensureCoreSheets_() {
   getOrCreateSheet_(SHEETS.ENGLISH_VOICE, [
     "timestamp",
     "date",
-    "from_name",
-    "from_user",
     "chat_id",
     "message_id",
     "reply_to_message_id",
     "file_id",
     "file_unique_id",
-    "duration_seconds",
     "mime_type",
     "file_size_bytes",
+    "duration_seconds",
+    "drive_file_id",
+    "drive_file_url",
+    "status",
+    "transcript_full",
+    "transcript_short",
+    "fixes_1",
+    "fixes_2",
+    "fixes_3",
+    "better_version",
+    "tomorrow_drill",
+    "verb_focus",
+    "error_message",
+    "updated_at",
+  ]);
+
+  // CoachState: state tracking for Coach v3 (replaces properties)
+  getOrCreateSheet_(SHEETS.COACH_STATE, [
+    "timestamp",
+    "date",
+    "week_index",
+    "day90",
+    "day21",
+    "cycle21",
+    "train_day14",
+    "impulse_count",
+    "last_am",
+    "last_pm",
+    "last_rem_1",
+    "last_rem_2",
+    "last_rem_3",
+    "last_rem_4",
+    "ritual_daily_date",
+    "ritual_daily_affirmations",
+  ]);
+
+  // PomodoroState: state tracking for Pomodoro (replaces properties)
+  getOrCreateSheet_(SHEETS.POMO_STATE, [
+    "timestamp",
+    "date",
+    "phase",
+    "cycle",
+    "end_ms",
+    "last_date",
   ]);
 
   // Coach V2 (una sola hoja - legacy, ya no se usa)
@@ -147,23 +188,76 @@ function appendCheckin_(msg, row) {
   ]);
 }
 
-function appendEnglishVoice_(msg, voiceMeta) {
-  // voiceMeta es msg.voice: { file_id, file_unique_id, duration, mime_type, file_size }
+function appendEnglishVoice_(chatId, messageId, replyToMsgId, voiceMeta) {
+  // voiceMeta: { file_id, file_unique_id, duration, mime_type, file_size }
+  // Append inicial con status RECEIVED
   const sh = getOrCreateSheet_(SHEETS.ENGLISH_VOICE, null);
   sh.appendRow([
-    new Date(),
-    isoDate_(new Date()),
-    fullNameFromMsg_(msg),
-    msg.from && msg.from.username ? msg.from.username : "",
-    msg.chat ? msg.chat.id : "",
-    msg.message_id || "",
-    msg.reply_to_message ? msg.reply_to_message.message_id : "",
-    voiceMeta.file_id || "",
-    voiceMeta.file_unique_id || "",
-    voiceMeta.duration || 0,
-    voiceMeta.mime_type || "",
-    voiceMeta.file_size || 0,
+    new Date(),                          // timestamp
+    isoDate_(new Date()),                // date
+    chatId,                              // chat_id
+    messageId,                           // message_id
+    replyToMsgId || "",                  // reply_to_message_id
+    voiceMeta.file_id || "",             // file_id
+    voiceMeta.file_unique_id || "",      // file_unique_id
+    voiceMeta.mime_type || "",           // mime_type
+    voiceMeta.file_size || 0,            // file_size_bytes
+    voiceMeta.duration || 0,             // duration_seconds
+    "",                                  // drive_file_id (será llenado luego)
+    "",                                  // drive_file_url
+    "RECEIVED",                          // status
+    "",                                  // transcript_full
+    "",                                  // transcript_short
+    "",                                  // fixes_1
+    "",                                  // fixes_2
+    "",                                  // fixes_3
+    "",                                  // better_version
+    "",                                  // tomorrow_drill
+    "",                                  // verb_focus
+    "",                                  // error_message
+    isoDateTime_(new Date()),            // updated_at
   ]);
+}
+
+function updateEnglishVoiceLog_(messageId, updates) {
+  // updates: { status?, drive_file_id?, drive_file_url?, transcript_full?, transcript_short?,
+  //            fixes_1?, fixes_2?, fixes_3?, better_version?, tomorrow_drill?, verb_focus?, error_message? }
+  const sh = getOrCreateSheet_(SHEETS.ENGLISH_VOICE, null);
+  const data = sh.getDataRange().getValues();
+  
+  // Encabezados: [0]
+  const headers = data[0];
+  const msgIdIdx = headers.indexOf("message_id");
+  if (msgIdIdx < 0) return; // No encontru columna
+  
+  // Buscar fila por message_id
+  let rowIdx = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][msgIdIdx]) === String(messageId)) {
+      rowIdx = i + 1; // +1 porque sheets usa 1-indexed
+      break;
+    }
+  }
+  
+  if (rowIdx < 0) return; // Fila no encontrada
+  
+  // Actualizar campos
+  const fieldsToUpdate = [
+    "status", "drive_file_id", "drive_file_url", "transcript_full", "transcript_short",
+    "fixes_1", "fixes_2", "fixes_3", "better_version", "tomorrow_drill", "verb_focus",
+    "error_message", "updated_at"
+  ];
+  
+  for (const field of fieldsToUpdate) {
+    const colIdx = headers.indexOf(field);
+    if (colIdx >= 0 && updates.hasOwnProperty(field)) {
+      let value = updates[field];
+      if (field === "updated_at" && !value) {
+        value = isoDateTime_(new Date());
+      }
+      sh.getRange(rowIdx, colIdx + 1).setValue(value);
+    }
+  }
 }
 
 function logPomodoro_(event, phase, cycle, meta) {

@@ -16,21 +16,29 @@ const PROP = {
   DIARY_REMINDER_SETUP: "DIARY_REMINDER_SETUP",
   COACH_SETUP: "COACH_SETUP",
 
-  POMO_ENABLED: "POMO_ENABLED",
-  POMO_PHASE: "POMO_PHASE",
-  POMO_CYCLE: "POMO_CYCLE",
-  POMO_END_MS: "POMO_END_MS",
-  POMO_LAST_DATE: "POMO_LAST_DATE",
-
   LAST_UPDATE_ID: "LAST_UPDATE_ID",
   CHECKIN_QUESTION_HISTORY: "CHECKIN_QUESTION_HISTORY",
+
+  // Coach: solo configuración (estado va en Sheets "CoachState")
+  COACH_ENABLED: "COACH_ENABLED",
+  COACH_LEVEL: "COACH_LEVEL",
+  COACH_START_ISO: "COACH_START_ISO",
+
+  // Pomodoro: solo configuración (estado va en Sheets "PomodoroState")
+  POMO_ENABLED: "POMO_ENABLED",
+
+  // OpenAI
+  OPENAI_API_KEY: "OPENAI_API_KEY",
+  ENGLISH_CONFIG: "ENGLISH_CONFIG",
 };
 
 const SHEETS = {
   DAILY: "Daily",
   CHECKINS: "Checkins",
   POMODORO: "Pomodoro",
+  POMO_STATE: "PomodoroState",
   COACH: "Coach",
+  COACH_STATE: "CoachState",
   ENGLISH_VOICE: "EnglishVoice",
 };
 
@@ -54,6 +62,9 @@ const DEFAULTS = {
   POMO_SHORT_BREAK_MIN: 5,
   POMO_LONG_BREAK_MIN: 15,
   POMO_SET_SIZE: 4,
+  // English AI (uses LockService, no properties needed for lock)
+  ENGLISH_MAX_MB: 25,
+  ENGLISH_PROCESSING_TIMEOUT_MIN: 5,
 };
 
 function cfgGet_(key, fallback) {

@@ -149,3 +149,27 @@ function setWebhookToWorker_() {
 function run_setWebhookToWorker() {
   setWebhookToWorker_();
 }
+
+
+function authDrive_() {
+  // Fuerza scopes Drive + Sheets
+  DriveApp.getRootFolder().getName();
+  SpreadsheetApp.getActiveSpreadsheet(); // o openById si no hay active
+}
+
+function run_authDrive() {
+  authDrive_();
+}
+
+function authDriveWrite_() {
+  const folder = DriveApp.getRootFolder();
+  const tmp = folder.createFile("scope_test.txt", "ok", MimeType.PLAIN_TEXT);
+  tmp.setTrashed(true); // lo manda a la papelera para no ensuciar
+
+  Logger.log("Drive write OK: " + tmp.getId());
+}
+
+
+function run_authDriveWrite() {
+  authDriveWrite_();
+}

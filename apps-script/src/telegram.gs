@@ -136,10 +136,9 @@ function handleMessage_(msg) {
     return;
   }
 
-  // [JOURNAL] - nota de voz para practicar inglés
+  // [JOURNAL] - nota de voz para practicar inglés con AI
   if (prompt.indexOf("[JOURNAL]") !== -1 && msg.voice) {
-    appendEnglishVoice_(msg, msg.voice);
-    tgSend_(chatId, "✅ Voice note saved! 🎙️", msg.message_id);
+    englishProcessVoiceAsync_(msg, msg.voice);
     return;
   }
 

@@ -68,6 +68,22 @@ function ensureCoreSheets_() {
     "meta",
   ]);
 
+  // EnglishVoice
+  getOrCreateSheet_(SHEETS.ENGLISH_VOICE, [
+    "timestamp",
+    "date",
+    "from_name",
+    "from_user",
+    "chat_id",
+    "message_id",
+    "reply_to_message_id",
+    "file_id",
+    "file_unique_id",
+    "duration_seconds",
+    "mime_type",
+    "file_size_bytes",
+  ]);
+
   // Coach V2 (una sola hoja - legacy, ya no se usa)
   // getOrCreateSheet_(SHEETS.COACH, [...]);
 
@@ -128,6 +144,25 @@ function appendCheckin_(msg, row) {
     row.question || "",
     row.intensity,
     row.answer_raw || "",
+  ]);
+}
+
+function appendEnglishVoice_(msg, voiceMeta) {
+  // voiceMeta es msg.voice: { file_id, file_unique_id, duration, mime_type, file_size }
+  const sh = getOrCreateSheet_(SHEETS.ENGLISH_VOICE, null);
+  sh.appendRow([
+    new Date(),
+    isoDate_(new Date()),
+    fullNameFromMsg_(msg),
+    msg.from && msg.from.username ? msg.from.username : "",
+    msg.chat ? msg.chat.id : "",
+    msg.message_id || "",
+    msg.reply_to_message ? msg.reply_to_message.message_id : "",
+    voiceMeta.file_id || "",
+    voiceMeta.file_unique_id || "",
+    voiceMeta.duration || 0,
+    voiceMeta.mime_type || "",
+    voiceMeta.file_size || 0,
   ]);
 }
 

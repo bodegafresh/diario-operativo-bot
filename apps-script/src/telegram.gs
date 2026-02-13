@@ -50,28 +50,36 @@ function doGet(e) {
 function handleMessage_(msg) {
   const chatId = msg && msg.chat && msg.chat.id ? String(msg.chat.id) : "";
   const text = msg && msg.text ? String(msg.text).trim() : "";
-  if (!chatId || !text) return;
+  if (!chatId) return;
 
   if (!isPrivateChat_(msg)) return;
   if (!authorizeOrLearnChat_(chatId)) return;
 
   ensureBaseAutomation_();
 
-  if (text.startsWith("/")) {
+  // Manejo de comandos (texto)
+  if (text && text.startsWith("/")) {
     handleCommand_(chatId, msg.message_id, text);
     return;
   }
 
+  // Manejo de replies (puede ser texto o voz)
   const reply = msg.reply_to_message;
   const repliedToBot = !!(reply && reply.from && reply.from.is_bot);
   if (!repliedToBot) {
+    // Si llegó sin reply y sin comando: mostrar ayuda
+    if (!text && !msg.voice) {
+      tgSend_(chatId, helpShort_(), msg.message_id);
+      return;
+    }
     tgSend_(chatId, helpShort_(), msg.message_id);
     return;
   }
 
   const prompt = reply && reply.text ? String(reply.text) : "";
 
-  if (prompt.indexOf("[DIARIO]") !== -1) {
+  // [DIARIO] - registro de día (texto)
+  if (prompt.indexOf("[DIARIO]") !== -1 && text) {
     const norm = parseDiaryText_(text);
     appendDaily_(msg, norm, text);
     tgSend_(
@@ -82,7 +90,8 @@ function handleMessage_(msg) {
     return;
   }
 
-  if (prompt.indexOf("[CHECK-IN]") !== -1) {
+  // [CHECK-IN] - check-in emocional (texto)
+  if (prompt.indexOf("[CHECK-IN]") !== -1 && text) {
     const parsed = parseCheckinAnswer_(text);
     appendCheckin_(msg, {
       question: extractCheckinQuestion_(prompt),
@@ -93,7 +102,8 @@ function handleMessage_(msg) {
     return;
   }
 
-  if (prompt.indexOf("[CIERRE]") !== -1) {
+  // [CIERRE] - coach night closure (texto)
+  if (prompt.indexOf("[CIERRE]") !== -1 && text) {
     const parsed = parseCoachCheckAnswer_(text);
     if (!parsed) {
       tgSend_(
@@ -126,6 +136,14 @@ function handleMessage_(msg) {
     return;
   }
 
+  // [JOURNAL] - nota de voz para practicar inglés
+  if (prompt.indexOf("[JOURNAL]") !== -1 && msg.voice) {
+    appendEnglishVoice_(msg, msg.voice);
+    tgSend_(chatId, "✅ Voice note saved! 🎙️", msg.message_id);
+    return;
+  }
+
+  // Si llegó aquí: reply pero sin contenido válido
   tgSend_(
     chatId,
     "Te leo. Usa /diario, /plan, /ritual o /coach 🙂",
@@ -201,6 +219,7 @@ function helpShort_() {
   return [
     "Comandos:",
     "/diario",
+    "/journal (voz/inglés)",
     "/pomodoro start | stop | status",
     "/coach on | off | status | reset21 | reset90",
     "/nivel suave | estandar | desafiante",
@@ -218,6 +237,7 @@ function helpLong_() {
     "",
     "📝 Registro:",
     "• /diario → registrar día (responde al template)",
+    "• /journal → practicar inglés con voz (responde con nota de voz: 10-30s)",
     "",
     "🧘 Coach (90 días + ciclos 21d):",
     "• /coach on|off|status|reset21|reset90",
@@ -302,6 +322,11 @@ function handleCommand_(chatId, messageId, text) {
     return;
   }
 
+  if (cmd === "/journal") {
+    tgSendSafe_(chatId, journalPrompt_(), messageId);
+    return;
+  }
+
   if (cmd === "/pomodoro") {
     if (arg === "start" || arg === "on") {
       const msg = pomodoroStart_();
@@ -341,4 +366,16 @@ function shouldProcessUpdate_(updateId) {
 
   props.setProperty(PROP.LAST_UPDATE_ID, String(cur));
   return true;
+}
+
+function journalPrompt_() {
+  return (
+    "[JOURNAL] 🎙️ Let's practice English!\n\n" +
+    "Reply to this message with a 10–30 second voice note.\n" +
+    "Speak naturally about:\n" +
+    "  • How you're feeling today\n" +
+    "  • What you did this morning\n" +
+    "  • Any thought on your mind\n\n" +
+    "Just hit 🎤 and record!"
+  );
 }

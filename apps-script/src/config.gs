@@ -30,8 +30,8 @@ const SHEETS = {
   DAILY: "Daily",
   CHECKINS: "Checkins",
   POMODORO: "Pomodoro",
-  COACH: "Coach", // hoja del coach (v2 legacy, ya no se usa)
-  COACH_V3: "Coach", // hoja del coach v3 con headers expandidos (mismo nombre, nuevos headers)
+  COACH: "Coach",
+  ENGLISH_VOICE: "EnglishVoice",
 };
 
 const DEFAULTS = {

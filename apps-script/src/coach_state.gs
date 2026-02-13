@@ -4,12 +4,69 @@
  */
 
 /**
+ * Migra estado de Coach desde propiedades antiguas a Sheets si es necesario
+ * Se ejecuta automáticamente la primera vez que se accede a getCoachState_()
+ */
+function migrateCoachStateIfNeeded_() {
+  const sh = getOrCreateSheet_(SHEETS.COACH_STATE, null);
+  const data = sh.getDataRange().getValues();
+  
+  // Si ya hay datos en CoachState (más de solo headers), no migrar
+  if (data.length > 1) {
+    return;
+  }
+  
+  // Intentar leer desde propiedades antiguas
+  const props = PropertiesService.getScriptProperties();
+  const oldWeekIndex = props.getProperty("COACH_WEEK_INDEX_V3");
+  const oldDay90 = props.getProperty("COACH_DAY90_V3");
+  const oldDay21 = props.getProperty("COACH_DAY21_V3");
+  const oldCycle21 = props.getProperty("COACH_CYCLE21_V3");
+  const oldTrainDay14 = props.getProperty("COACH_TRAIN_DAY14_V3");
+  const oldImpulseCount = props.getProperty("COACH_IMPULSE_COUNT_V3");
+  const oldLastAM = props.getProperty("COACH_LAST_AM_V3");
+  const oldLastPM = props.getProperty("COACH_LAST_PM_V3");
+  const oldLastRem1 = props.getProperty("COACH_LAST_REM_1_V3");
+  const oldLastRem2 = props.getProperty("COACH_LAST_REM_2_V3");
+  const oldLastRem3 = props.getProperty("COACH_LAST_REM_3_V3");
+  const oldLastRem4 = props.getProperty("COACH_LAST_REM_4_V3");
+  const oldRitualDate = props.getProperty("COACH_RITUAL_DAILY_DATE_V3");
+  const oldRitualAffirmations = props.getProperty("COACH_RITUAL_DAILY_AFFIRMATIONS_V3");
+  
+  // Si hay al menos UNO de los valores antiguos, hace la migración
+  if (oldWeekIndex || oldDay90 || oldDay21 || oldCycle21 || oldTrainDay14) {
+    const row = [
+      new Date(),  // timestamp
+      isoDate_(new Date()),  // date
+      oldWeekIndex || 1,  // week_index
+      oldDay90 || 1,  // day90
+      oldDay21 || 1,  // day21
+      oldCycle21 || 1,  // cycle21
+      oldTrainDay14 || 1,  // train_day14
+      oldImpulseCount || 0,  // impulse_count
+      oldLastAM || "",  // last_am
+      oldLastPM || "",  // last_pm
+      oldLastRem1 || "",  // last_rem_1
+      oldLastRem2 || "",  // last_rem_2
+      oldLastRem3 || "",  // last_rem_3
+      oldLastRem4 || "",  // last_rem_4
+      oldRitualDate || "",  // ritual_daily_date
+      oldRitualAffirmations || ""  // ritual_daily_affirmations
+    ];
+    sh.appendRow(row);
+  }
+}
+
+/**
  * Carga el estado actual del Coach desde Sheets CoachState
  * Retorna objeto con: week_index, day90, day21, cycle21, train_day14, impulse_count,
  * last_am, last_pm, last_rem_1-4, ritual_daily_date, ritual_daily_affirmations
  * Si no existe, retorna objeto vacío.
  */
 function getCoachState_() {
+  // Migrar si es necesario
+  migrateCoachStateIfNeeded_();
+  
   const sh = getOrCreateSheet_(SHEETS.COACH_STATE, null);
   const data = sh.getDataRange().getValues();
   

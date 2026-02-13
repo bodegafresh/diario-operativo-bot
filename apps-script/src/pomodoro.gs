@@ -1,11 +1,16 @@
 /**
  * pomodoro.gs
  * Pomodoro 25/5 x4 + 15. Solo Lun–Vie 09:00–18:00 Chile.
+ * ESTADO: Se reinicia cada día automáticamente a work/cycle1 a las START_H
+ * /pomodoro start → Inicia LIMPIO (borra data vieja si existe)
+ * /pomodoro stop → Desactiva completamente y limpia datos
  */
 
 function pomodoroStart_() {
+  // Limpiar datos viejos y reiniciar LIMPIO
+  clearPomodoroState_();
+  initPomodoroState_();
   cfgSet_(PROP.POMO_ENABLED, "true");
-  if (!getPomodoroPhase_()) initPomodoroState_();
   ensurePomodoroTickTrigger_();
   return getPomodoroConfigMessage_();
 }
@@ -13,7 +18,9 @@ function pomodoroStart_() {
 function pomodoroStop_() {
   cfgSet_(PROP.POMO_ENABLED, "false");
   deleteTriggersByHandler_("pomodoroTick_");
-}
+  // Limpiar datos del Pomodoro cuando se desactiva
+  clearPomodoroState_();
+
 
 /**
  * Genera el mensaje descriptivo del ciclo de pomodoro según configuración.
@@ -65,18 +72,33 @@ function getPomodoroShortDesc_() {
 
 function pomodoroStatus_() {
   const enabled = cfgGet_(PROP.POMO_ENABLED, "false") === "true";
-  if (!enabled) return "Pomodoro: OFF. Usa /pomodoro start.";
+  if (!enabled) return "🛑 Pomodoro: OFF. Usa /pomodoro start.";
 
   const phase = getPomodoroPhase_();
-  const cycle = getPomodoroCycle_();
+  const cycle = getPomodoroCycle_() || 1;
   const endMs = getPomodoroEndMs_();
 
-  let eta = "";
-  if (endMs > 0) {
-    const mins = Math.max(0, Math.ceil((endMs - Date.now()) / 60000));
-    eta = ` (~${mins} min)`;
+  // Si está ON pero sin end_ms (no ha iniciado aún), mostrar estado inicial
+  if (!endMs || endMs === 0 || Date.now() >= endMs) {
+    return "🍅 Pomodoro: ON, LISTO para iniciar.\nProxima fase: Trabajo " + cycle + "/" + DEFAULTS.POMO_SET_SIZE + " (" + DEFAULTS.POMO_WORK_MIN + " min).\nUsa /pomodoro start nuevamente para comenzar.";
   }
-  return `Pomodoro: ON | phase=${phase} | ciclo=${cycle}/${DEFAULTS.POMO_SET_SIZE}${eta}`;
+
+  // Mostrar estado actual en tiempo real
+  let phaseEmoji = "";
+  let phaseName = "";
+  if (phase === "work") {
+    phaseEmoji = "🍅";
+    phaseName = "Trabajo";
+  } else if (phase === "short_break") {
+    phaseEmoji = "☕";
+    phaseName = "Descanso corto";
+  } else {
+    phaseEmoji = "🧘";
+    phaseName = "Descanso largo";
+  }
+
+  const mins = Math.max(0, Math.ceil((endMs - Date.now()) / 60000));
+  return phaseEmoji + " Pomodoro: ON\n" + phaseName + " " + cycle + "/" + DEFAULTS.POMO_SET_SIZE + "\n⏱️ " + mins + " min restantes";
 }
 
 function ensurePomodoroTickTrigger_() {

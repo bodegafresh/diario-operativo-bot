@@ -4,11 +4,61 @@
  */
 
 /**
+ * Limpia completamente el estado del Pomodoro (llamado por /pomodoro stop y /pomodoro start)
+ * Borra todas las filas de datos, mantiene solo headers
+ */
+function clearPomodoroState_() {
+  const sh = getOrCreateSheet_(SHEETS.POMO_STATE, null);
+  const data = sh.getDataRange().getValues();
+  
+  // Si hay más de solo headers, borra todos los datos
+  if (data.length > 1) {
+    sh.deleteRows(2, data.length - 1);
+  }
+}
+
+/**
+ * Detecta y limpia estados de Pomodoro "pegados" (end_ms ya pasó hace >1 hora sin transicionar)
+ * Ocurre cuando hay datos históricos en la Sheets pero las properties fueron borradas
+ */
+function cleanupStuckPomodoroState_() {
+  const sh = getOrCreateSheet_(SHEETS.POMO_STATE, null);
+  const data = sh.getDataRange().getValues();
+  
+  if (data.length <= 1) return; // No hay datos
+  
+  const headers = data[0];
+  const lastRow = data[data.length - 1];
+  
+  let endMs = 0;
+  let timestamp = null;
+  
+  // Busca end_ms y timestamp en los headers
+  for (let i = 0; i < headers.length; i++) {
+    const header = String(headers[i]).toLowerCase();
+    if (header === "end_ms") endMs = parseInt(lastRow[i], 10) || 0;
+    if (header === "timestamp") timestamp = lastRow[i];
+  }
+  
+  // Si end_ms está en el pasado hace más de 1 hora, el estado está pegado/corrupto
+  if (endMs > 0 && Date.now() > endMs + 3600000) { // endMs + 1 hora
+    // Borra todos los datos de la Sheets y reinicia
+    if (data.length > 1) {
+      sh.deleteRows(2, data.length - 1); // Mantén solo headers
+    }
+  }
+}
+
+/**
  * Carga el estado actual del Pomodoro desde Sheets PomodoroState
  * Retorna objeto con: phase, cycle, end_ms, last_date
  * Si no existe, retorna objeto vacío.
+ * Detecta y limpia estados "pegados" (corrupto por data histórica)
  */
 function getPomodoroState_() {
+  // Primero limpia estados pegados
+  cleanupStuckPomodoroState_();
+  
   const sh = getOrCreateSheet_(SHEETS.POMO_STATE, null);
   const data = sh.getDataRange().getValues();
   

@@ -18,20 +18,6 @@ function openaiTranscribe_(audioBlob, filename, mimeType) {
 
   const url = "https://api.openai.com/v1/audio/transcriptions";
 
-  // Preparar multipart form data (UrlFetchApp puede manejar Blob directamente)
-  const boundary = "----WebKitFormBoundary" + Utilities.getUuid();
-  let body = "";
-
-  // Agregar modelo
-  body += "--" + boundary + "\r\n";
-  body += 'Content-Disposition: form-data; name="model"\r\n\r\n';
-  body += "whisper-1\r\n";
-
-  // Agregar language (optional but helps)
-  body += "--" + boundary + "\r\n";
-  body += 'Content-Disposition: form-data; name="language"\r\n\r\n';
-  body += "en\r\n";
-
   // Preparar payload (file se agrega después)
   // En Apps Script, es más fácil usar FormData si disponible, o el siguiente approach:
   
@@ -75,23 +61,40 @@ function openaiTranscribe_(audioBlob, filename, mimeType) {
  */
 function openaiAnalyzeEnglish_(transcript) {
   const apiKey = cfgGet_(PROP.OPENAI_API_KEY, "");
+  const lang = cfgGet_(PROP.ENGLISH_COACH_LANG, "es");
+
+  const explainLangLine = (lang === "es")
+    ? "El usuario es hispanohablante. Explica EN ESPAÑOL..."
+    : "Explain in ENGLISH...";
   if (!apiKey) {
     throw new Error("Falta OPENAI_API_KEY en Script Properties");
   }
 
   const url = "https://api.openai.com/v1/chat/completions";
 
-  const systemPrompt = `You are an English speaking coach and grammar expert. 
-Analyze the user's spoken English (provided as a transcript) and give specific, actionable feedback.
-Return a JSON object (only JSON, no markdown or extra text) with these exact fields:
-{
-  "transcript_short": "First 1-2 sentences of transcript or 1-2 line summary",
-  "top_fixes": ["Fix 1: specific error with explanation", "Fix 2...", "Fix 3..."],
-  "better_version": "A rewritten, natural version of what they said (1-2 sentences)",
-  "tomorrow_drill": "A specific 60-second speaking drill instruction for tomorrow",
-  "verb_focus": "A grammar focus: e.g. 'Simple present vs present continuous - explanation'"
-}
-Be concise, clear, and encouraging. Focus on practical improvements.`;
+  const systemPrompt = `
+  Eres un coach de speaking en inglés y experto en gramática.
+  ${explainLangLine}
+  El usuario es hispanohablante. Explica EN ESPAÑOL, pero mantén en INGLÉS:
+  - transcript_short
+  - better_version
+  - ejemplos del drill (las frases a decir)
+
+  Devuelve SOLO JSON válido (sin markdown, sin texto extra) con EXACTAMENTE estas llaves:
+  {
+    "transcript_short": "English. 1-2 lines max.",
+    "top_fixes": ["Español. 1-2 líneas cada fix, con ejemplo corto en inglés si aplica.", "…", "…"],
+    "better_version": "English. Natural rewrite (1-2 sentences).",
+    "tomorrow_drill": "Español. Instrucción 60s + lista de 3-5 frases ejemplo en inglés.",
+    "verb_focus": "Español. Tema gramatical + explicación ultra breve + 1 ejemplo en inglés."
+  }
+
+  Reglas:
+  - Sé corto y accionable.
+  - No agregues campos extra.
+  - Si el transcript es muy corto, igual da 3 fixes (pueden ser micro-mejoras).
+  `.trim();
+
 
   const userPrompt = `Analyze this English transcript and provide coaching feedback:\n\n"${transcript}"`;
 
@@ -101,9 +104,10 @@ Be concise, clear, and encouraging. Focus on practical improvements.`;
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt }
     ],
-    temperature: 0.7,
-    max_tokens: 800
+    temperature: 0.3,
+    max_tokens: 350
   };
+
 
   try {
     const response = UrlFetchApp.fetch(url, {

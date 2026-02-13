@@ -75,6 +75,7 @@ function pickRandom_(arr) {
 /**
  * Obtiene las 4 afirmaciones del día (una por categoría).
  * Las mismas se mantienen durante todo el día, cambian cada día.
+ * Now uses Sheets CoachState instead of properties.
  */
 function getDailyAffirmations_() {
   const today = new Date();
@@ -84,14 +85,13 @@ function getDailyAffirmations_() {
     "yyyy-MM-dd"
   );
 
-  const props = PropertiesService.getScriptProperties();
-  const savedDate = props.getProperty(COACH.RITUAL_DAILY_DATE);
-  const savedAffirmations = props.getProperty(COACH.RITUAL_DAILY_AFFIRMATIONS);
+  const savedDate = getCoachRitualDailyDate_();
+  const savedAffirmationsStr = getCoachRitualDailyAffirmations_();
 
   // Si ya tenemos afirmaciones para hoy, las devolvemos
-  if (savedDate === todayStr && savedAffirmations) {
+  if (savedDate === todayStr && savedAffirmationsStr) {
     try {
-      return JSON.parse(savedAffirmations);
+      return JSON.parse(savedAffirmationsStr);
     } catch (e) {
       // Si hay error al parsear, generamos nuevas
     }
@@ -105,12 +105,9 @@ function getDailyAffirmations_() {
     pickRandom_(YO_SOY_BANK.trabajo),
   ];
 
-  // Guardar para el resto del día
-  props.setProperty(COACH.RITUAL_DAILY_DATE, todayStr);
-  props.setProperty(
-    COACH.RITUAL_DAILY_AFFIRMATIONS,
-    JSON.stringify(affirmations)
-  );
+  // Guardar para el resto del día (using Sheets CoachState)
+  setCoachRitualDailyDate_(todayStr);
+  setCoachRitualDailyAffirmations_(JSON.stringify(affirmations));
 
   return affirmations;
 }

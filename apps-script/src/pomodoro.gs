@@ -1,15 +1,21 @@
 /**
  * pomodoro.gs
  * Pomodoro 25/5 x4 + 15. Solo Lun–Vie 09:00–18:00 Chile.
- * ESTADO: Se reinicia cada día automáticamente a work/cycle1 a las START_H
- * /pomodoro start → Inicia LIMPIO (borra data vieja si existe)
- * /pomodoro stop → Desactiva completamente y limpia datos
+ * ESTADO: Se guarda en Properties (simple, robusto, sin complejidad de Sheets)
+ * /pomodoro start → Inicia LIMPIO (resetea todo)
+ * /pomodoro stop → Desactiva completamente
  */
 
 function pomodoroStart_() {
-  // Limpiar datos viejos y reiniciar LIMPIO
-  clearPomodoroState_();
-  initPomodoroState_();
+  // Resetear a estado limpio
+  cfgDel_(PROP.POMO_PHASE);
+  cfgDel_(PROP.POMO_CYCLE);
+  cfgDel_(PROP.POMO_END_MS);
+  
+  // Iniciar fresh
+  cfgSet_(PROP.POMO_PHASE, "work");
+  cfgSet_(PROP.POMO_CYCLE, "1");
+  cfgSet_(PROP.POMO_END_MS, "0");
   cfgSet_(PROP.POMO_ENABLED, "true");
   ensurePomodoroTickTrigger_();
   return getPomodoroConfigMessage_();
@@ -19,8 +25,10 @@ function pomodoroStop_() {
   cfgSet_(PROP.POMO_ENABLED, "false");
   deleteTriggersByHandler_("pomodoroTick_");
   // Limpiar datos del Pomodoro cuando se desactiva
-  clearPomodoroState_();
-
+  cfgDel_(PROP.POMO_PHASE);
+  cfgDel_(PROP.POMO_CYCLE);
+  cfgDel_(PROP.POMO_END_MS);
+}
 
 /**
  * Genera el mensaje descriptivo del ciclo de pomodoro según configuración.
@@ -74,12 +82,13 @@ function pomodoroStatus_() {
   const enabled = cfgGet_(PROP.POMO_ENABLED, "false") === "true";
   if (!enabled) return "🛑 Pomodoro: OFF. Usa /pomodoro start.";
 
-  const phase = getPomodoroPhase_();
-  const cycle = getPomodoroCycle_() || 1;
-  const endMs = getPomodoroEndMs_();
+  // Leer estado directamente de Properties
+  const phase = cfgGet_(PROP.POMO_PHASE, "");
+  const cycle = toInt_(cfgGet_(PROP.POMO_CYCLE, "1")) || 1;
+  const endMs = toInt_(cfgGet_(PROP.POMO_END_MS, "0")) || 0;
 
-  // Si está ON pero sin end_ms (no ha iniciado aún), mostrar estado inicial
-  if (!endMs || endMs === 0 || Date.now() >= endMs) {
+  // Si está ON pero sin phase/end_ms (no ha iniciado aún), mostrar estado inicial
+  if (!phase || !endMs || endMs === 0 || Date.now() >= endMs) {
     return "🍅 Pomodoro: ON, LISTO para iniciar.\nProxima fase: Trabajo " + cycle + "/" + DEFAULTS.POMO_SET_SIZE + " (" + DEFAULTS.POMO_WORK_MIN + " min).\nUsa /pomodoro start nuevamente para comenzar.";
   }
 
@@ -111,6 +120,7 @@ function ensurePomodoroTickTrigger_() {
 }
 
 function pomodoroTick_() {
+  // GUARD: Si no está habilitado, no hacer nada
   if (cfgGet_(PROP.POMO_ENABLED, "false") !== "true") return;
 
   const chatId = getChatId_();
@@ -128,67 +138,79 @@ function pomodoroTick_() {
   // Resetear contador si es un nuevo día
   resetPomodoroIfNewDay_(now);
 
-  let phase = getPomodoroPhase_();
-  if (!phase) initPomodoroState_();
+  // Leer estado actual
+  let phase = cfgGet_(PROP.POMO_PHASE, "");
+  let cycle = toInt_(cfgGet_(PROP.POMO_CYCLE, "0")) || 1;
+  let endMs = toInt_(cfgGet_(PROP.POMO_END_MS, "0")) || 0;
 
-  let cycle = toInt_(getPomodoroCycle_()) || 1;
+  // Si no hay fase registrada, inicializar
+  if (!phase) {
+    phase = "work";
+    cfgSet_(PROP.POMO_PHASE, phase);
+    cfgSet_(PROP.POMO_CYCLE, "1");
+    cycle = 1;
+  }
+
   cycle = clamp_(cycle, 1, DEFAULTS.POMO_SET_SIZE);
 
-  const endMs = getPomodoroEndMs_();
-
+  // Si aún no hay end_ms, calcular y guardar
   if (!endMs) {
-    setPhaseEndFromNow_(phase);
+    const nowMs = Date.now();
+    const durMin =
+      phase === "work"
+        ? DEFAULTS.POMO_WORK_MIN
+        : phase === "short_break"
+        ? DEFAULTS.POMO_SHORT_BREAK_MIN
+        : DEFAULTS.POMO_LONG_BREAK_MIN;
+    endMs = nowMs + durMin * 60 * 1000;
+    cfgSet_(PROP.POMO_END_MS, String(endMs));
+    
     notifyPomodoroPhase_(chatId, phase, cycle);
     logPomodoro_("start", phase, cycle, { at: isoDateTime_(now) });
     return;
   }
 
+  // Si el tiempo no ha vencido aún, esperar
   if (Date.now() < endMs) return;
 
+  // El tiempo venció, transicionar a siguiente fase
   logPomodoro_("end", phase, cycle, { at: isoDateTime_(now) });
 
-  const next = nextPomodoroPhase_(phase, cycle);
-  phase = next.phase;
-  cycle = next.cycle;
-
-  setPomodoroPhase_(phase);
-  setPomodoroCycle_(cycle);
-  setPhaseEndFromNow_(phase);
-
-  notifyPomodoroPhase_(chatId, phase, cycle);
-  logPomodoro_("start", phase, cycle, { at: isoDateTime_(now) });
-}
-
-function initPomodoroState_() {
-  setPomodoroPhase_("work");
-  setPomodoroCycle_(1);
-  // Note: end_ms will be initialized when phase starts
-}
-
-function nextPomodoroPhase_(phase, cycle) {
+  // Calcular siguiente fase
+  let nextPhase = phase;
+  let nextCycle = cycle;
+  
   if (phase === "work") {
-    if (cycle >= DEFAULTS.POMO_SET_SIZE)
-      return { phase: "long_break", cycle: cycle };
-    return { phase: "short_break", cycle: cycle };
+    if (cycle >= DEFAULTS.POMO_SET_SIZE) {
+      nextPhase = "long_break";
+    } else {
+      nextPhase = "short_break";
+    }
+  } else if (phase === "short_break") {
+    nextPhase = "work";
+    nextCycle = Math.min(DEFAULTS.POMO_SET_SIZE, cycle + 1);
+  } else {
+    // long_break
+    nextPhase = "work";
+    nextCycle = 1;
   }
-  if (phase === "short_break")
-    return {
-      phase: "work",
-      cycle: Math.min(DEFAULTS.POMO_SET_SIZE, cycle + 1),
-    };
-  return { phase: "work", cycle: 1 };
-}
 
-function setPhaseEndFromNow_(phase) {
+  // Guardar siguiente estado
+  cfgSet_(PROP.POMO_PHASE, nextPhase);
+  cfgSet_(PROP.POMO_CYCLE, String(nextCycle));
+  
+  // Calcular nuevo end_ms
   const nowMs = Date.now();
   const durMin =
-    phase === "work"
+    nextPhase === "work"
       ? DEFAULTS.POMO_WORK_MIN
-      : phase === "short_break"
+      : nextPhase === "short_break"
       ? DEFAULTS.POMO_SHORT_BREAK_MIN
       : DEFAULTS.POMO_LONG_BREAK_MIN;
+  cfgSet_(PROP.POMO_END_MS, String(nowMs + durMin * 60 * 1000));
 
-  setPomodoroEndMs_(nowMs + durMin * 60 * 1000);
+  notifyPomodoroPhase_(chatId, nextPhase, nextCycle);
+  logPomodoro_("start", nextPhase, nextCycle, { at: isoDateTime_(now) });
 }
 
 function notifyPomodoroPhase_(chatId, phase, cycle) {
@@ -225,14 +247,16 @@ function isAllowedPomodoroDay_(date) {
  */
 function resetPomodoroIfNewDay_(now) {
   const today = isoDate_(now);
-  const lastDate = getPomodoroLastDate_();
+  const lastDate = cfgGet_(PROP.POMO_LAST_DATE, "");
 
   if (lastDate && lastDate !== today) {
     // Nuevo día detectado, reiniciar estado
-    initPomodoroState_();
-    setPomodoroLastDate_(today);
+    cfgSet_(PROP.POMO_PHASE, "work");
+    cfgSet_(PROP.POMO_CYCLE, "1");
+    cfgSet_(PROP.POMO_END_MS, "0");
+    cfgSet_(PROP.POMO_LAST_DATE, today);
   } else if (!lastDate) {
     // Primera vez, guardar fecha actual
-    setPomodoroLastDate_(today);
+    cfgSet_(PROP.POMO_LAST_DATE, today);
   }
 }

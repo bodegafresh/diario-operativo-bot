@@ -115,21 +115,39 @@ function ensureCoreSheets_() {
     "ritual_daily_affirmations",
   ]);
 
-  // PomodoroState: state tracking for Pomodoro (replaces properties)
-  getOrCreateSheet_(SHEETS.POMO_STATE, [
+  // coach
+  getOrCreateSheet_(SHEETS.COACH, [
     "timestamp",
     "date",
-    "phase",
-    "cycle",
-    "end_ms",
-    "last_date",
+    "level",
+
+    "start_iso",
+    "day90",
+    "week_1_12",
+
+    "cycle21_1_4",
+    "day21_1_21",
+
+    "train_day14_1_14",
+
+    "phase", // FUNDAMENTO / CONSTRUCCIÓN / INTEGRACIÓN
+    "theme21", // CONTROL DE IMPULSOS / DISCIPLINA ESTABLE / ...
+
+    "score_0_6",
+    "tier", // valid / fragile
+    "alcohol_bool",
+    "impulses_count",
+
+    "workout_done",
+    "read_done",
+    "voice_done",
+    "english_done",
+    "story_done",
+    "ritual_done",
+
+    "note", // opcional
+    "raw_json", // payload completo por si quieres auditar luego
   ]);
-
-  // Coach V2 (una sola hoja - legacy, ya no se usa)
-  // getOrCreateSheet_(SHEETS.COACH, [...]);
-
-  // Coach V3 (misma hoja "Coach", headers actualizados)
-  ensureCoachV3Sheet_();
 }
 
 function fullNameFromMsg_(msg) {
@@ -272,57 +290,6 @@ function logPomodoro_(event, phase, cycle, meta) {
   ]);
 }
 
-/**
- * appendCoachV3Log_ (para sheets.gs)
- *
- * Recomendación: crea una nueva hoja "CoachV3" (o reutiliza SHEETS.COACH si quieres),
- * pero ideal separar v2 y v3 para no mezclar columnas.
- *
- * Este logger está diseñado para:
- * - 90 días + 12 semanas + ciclos 21 días
- * - score (0..6), alcohol, impulsos
- * - flags de tareas (workout/read/voice/english/story/ritual)
- *
- * Se llama desde coach.gs así:
- * appendCoachV3Log_(new Date(), { level, score, drank, impulses, tasks })
- */
-
-/** Asegura hoja CoachV3 con headers (llámalo desde ensureCoreSheets_()) */
-function ensureCoachV3Sheet_() {
-  getOrCreateSheet_(SHEETS.COACH_V3, [
-    "timestamp",
-    "date",
-    "level",
-
-    "start_iso",
-    "day90",
-    "week_1_12",
-
-    "cycle21_1_4",
-    "day21_1_21",
-
-    "train_day14_1_14",
-
-    "phase", // FUNDAMENTO / CONSTRUCCIÓN / INTEGRACIÓN
-    "theme21", // CONTROL DE IMPULSOS / DISCIPLINA ESTABLE / ...
-
-    "score_0_6",
-    "tier", // valid / fragile
-    "alcohol_bool",
-    "impulses_count",
-
-    "workout_done",
-    "read_done",
-    "voice_done",
-    "english_done",
-    "story_done",
-    "ritual_done",
-
-    "note", // opcional
-    "raw_json", // payload completo por si quieres auditar luego
-  ]);
-}
-
 /** Helper: seguro boolean->1/0 */
 function b01_(v) {
   return v ? 1 : 0;
@@ -334,7 +301,7 @@ function b01_(v) {
  * @param {Object} data { level, score, drank, impulses, tasks, tier?, note? }
  */
 function appendCoachV3Log_(ts, data) {
-  const sh = getOrCreateSheet_(SHEETS.COACH_V3, null);
+  const sh = getOrCreateSheet_(SHEETS.COACH, null);
 
   // Estado del coach v3 (viene de coach.gs)
   const st = typeof coachState_ === "function" ? coachState_() : null;

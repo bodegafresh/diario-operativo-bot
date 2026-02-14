@@ -6,7 +6,6 @@
 function setup() {
   ensureCoreSheets_();
   ensureBaseAutomation_();
-  ensureCoachV3Sheet_();
 
   // Coach triggers (plan fijo + scheduler aleatorio + check fijo)
   if (typeof ensureCoachTriggers_ === "function") {

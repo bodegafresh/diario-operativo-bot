@@ -24,8 +24,12 @@ const PROP = {
   COACH_LEVEL: "COACH_LEVEL",
   COACH_START_ISO: "COACH_START_ISO",
 
-  // Pomodoro: solo configuración (estado va en Sheets "PomodoroState")
+  // Pomodoro: estado + configuración (almacenado en Properties por simplicidad)
   POMO_ENABLED: "POMO_ENABLED",
+  POMO_PHASE: "POMO_PHASE",           // "work" | "short_break" | "long_break"
+  POMO_CYCLE: "POMO_CYCLE",           // 1-4
+  POMO_END_MS: "POMO_END_MS",         // milliseconds when current phase ends
+  POMO_LAST_DATE: "POMO_LAST_DATE",   // YYYY-MM-DD to detect day changes
 
   // OpenAI
   OPENAI_API_KEY: "OPENAI_API_KEY",
@@ -37,7 +41,7 @@ const SHEETS = {
   DAILY: "Daily",
   CHECKINS: "Checkins",
   POMODORO: "Pomodoro",
-  POMO_STATE: "PomodoroState",
+  POMO_STATE: "PomodoroState", // DEPRECATED: No longer used (state in Properties)
   COACH: "Coach",
   COACH_STATE: "CoachState",
   ENGLISH_VOICE: "EnglishVoice",

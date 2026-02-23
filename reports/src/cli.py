@@ -7,9 +7,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from diario.loaders import load_data
-from diario.scoring import build_kpis
-from diario.render import render_all
+from .diario.loaders import load_data
+from .diario.scoring import build_kpis
+from .diario.render import render_all
 
 load_dotenv()
 
@@ -52,7 +52,7 @@ def main() -> int:
     kpis = build_kpis(data, tz=args.tz)
 
     if args.ai == "on":
-        from diario.ai import generate_weekly_ai_insights
+        from .diario.ai import generate_weekly_ai_insights
 
         generate_weekly_ai_insights(
             kpis=kpis,

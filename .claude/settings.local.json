@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"try\\\\|except\\\\|raise\\\\|error\\\\|Exception\" /Users/mcerda/mcerda_git/trading-journal/src/trade_journal/app/pages/*.py)"
+    ]
+  }
+}

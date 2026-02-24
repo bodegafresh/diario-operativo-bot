@@ -17,7 +17,7 @@ load_dotenv()
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate Diario Operativo HTML reports")
 
-    p.add_argument("--source", choices=["excel", "sheets"], default=os.getenv("SOURCE", "excel"))
+    p.add_argument("--source", choices=["excel", "sheets", "supabase"], default=os.getenv("SOURCE", "excel"))
 
     # Excel
     p.add_argument("--excel-path", default=os.getenv("EXCEL_PATH", "diario operativo.xlsx"))

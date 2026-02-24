@@ -82,7 +82,7 @@ function getDailyAffirmations_() {
   const todayStr = Utilities.formatDate(
     today,
     Session.getScriptTimeZone(),
-    "yyyy-MM-dd"
+    "yyyy-MM-dd",
   );
 
   const savedDate = getCoachRitualDailyDate_();
@@ -247,12 +247,15 @@ function coachReset21_() {
 
 function coachReset90_() {
   cfgSet_(COACH.START_ISO, isoDate_(new Date()));
-  setCoachWeekIndex_(1);
-  setCoachDay21_(1);
-  setCoachCycle21_(1);
-  setCoachTrainDay14_(1);
-  setCoachDay90_(1);
-  setCoachImpulseCount_(0);
+  // Actualización atómica: un solo appendRow
+  updateCoachState_({
+    week_index: 1,
+    day21: 1,
+    cycle21: 1,
+    train_day14: 1,
+    day90: 1,
+    impulse_count: 0,
+  });
 }
 
 function coachAdvanceDay_() {
@@ -260,11 +263,9 @@ function coachAdvanceDay_() {
 
   let next90 = st.day90 + 1;
   if (next90 > 90) next90 = 90;
-  setCoachDay90_(next90);
 
   let next14 = st.trainDay + 1;
   if (next14 > 14) next14 = 1;
-  setCoachTrainDay14_(next14);
 
   let next21 = st.day21 + 1;
   let nextCycle = st.cycle21;
@@ -272,9 +273,15 @@ function coachAdvanceDay_() {
   if (next21 > 21) {
     next21 = 1;
     nextCycle = Math.min(4, nextCycle + 1);
-    setCoachCycle21_(nextCycle);
   }
-  setCoachDay21_(next21);
+
+  // Actualización atómica: un solo appendRow en vez de 3-4 separados
+  updateCoachState_({
+    day90: next90,
+    train_day14: next14,
+    day21: next21,
+    cycle21: nextCycle,
+  });
 
   return { next90, next14, next21, nextCycle };
 }
@@ -899,7 +906,7 @@ function coachSendMorningInternal_(force) {
       tgSend_(
         chatId,
         "⚠️ Error enviando /plan: " +
-          (err && err.message ? err.message : String(err))
+          (err && err.message ? err.message : String(err)),
       );
     } catch (_) {}
   }
@@ -1131,7 +1138,7 @@ function coachHandleCommand_(chatId, messageId, cmd, arg) {
       tgSend_(
         chatId,
         "🔁 Reiniciado ciclo 21 a Día 1/21 (sin destruir el mes).",
-        messageId
+        messageId,
       );
       return true;
     }
@@ -1141,7 +1148,7 @@ function coachHandleCommand_(chatId, messageId, cmd, arg) {
       tgSend_(
         chatId,
         "🧹 Reset completo 90 días (semana 1, ciclo 1, día 1).",
-        messageId
+        messageId,
       );
       return true;
     }
@@ -1149,7 +1156,7 @@ function coachHandleCommand_(chatId, messageId, cmd, arg) {
     tgSend_(
       chatId,
       "Uso: /coach on | off | status | reset21 | reset90",
-      messageId
+      messageId,
     );
     return true;
   }

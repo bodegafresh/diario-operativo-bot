@@ -3,19 +3,76 @@
  * Getters/setters for Coach v3 state (moved from properties to Sheets "CoachState")
  */
 
+/* ── Headers canónicos de CoachState ── */
+const COACH_STATE_HEADERS = [
+  "timestamp",
+  "date",
+  "week_index",
+  "day90",
+  "day21",
+  "cycle21",
+  "train_day14",
+  "impulse_count",
+  "last_am",
+  "last_pm",
+  "last_rem_1",
+  "last_rem_2",
+  "last_rem_3",
+  "last_rem_4",
+  "ritual_daily_date",
+  "ritual_daily_affirmations",
+];
+
+/* Campos que deben leerse/escribirse como enteros */
+const COACH_STATE_NUMERIC_FIELDS = new Set([
+  "week_index",
+  "day90",
+  "day21",
+  "cycle21",
+  "train_day14",
+  "impulse_count",
+]);
+
+/* Campos que se ignoran al construir el objeto de estado */
+const COACH_STATE_SKIP_FIELDS = new Set(["timestamp", "date"]);
+
+/**
+ * Obtiene la hoja CoachState, creándola con headers si no existe.
+ * Si la hoja existe pero le faltan headers (fila 1 vacía), los inserta.
+ */
+function getCoachStateSheet_() {
+  const sh = getOrCreateSheet_(SHEETS.COACH_STATE, COACH_STATE_HEADERS);
+
+  // Reparación: si la hoja existe pero la fila 1 no tiene headers válidos
+  const firstCell = sh.getRange(1, 1).getValue();
+  if (
+    sh.getLastRow() === 0 ||
+    String(firstCell).toLowerCase() !== "timestamp"
+  ) {
+    // Insertar headers en fila 1 (desplaza datos existentes hacia abajo)
+    if (sh.getLastRow() > 0) {
+      sh.insertRowBefore(1);
+    }
+    sh.getRange(1, 1, 1, COACH_STATE_HEADERS.length).setValues([
+      COACH_STATE_HEADERS,
+    ]);
+  }
+  return sh;
+}
+
 /**
  * Migra estado de Coach desde propiedades antiguas a Sheets si es necesario
  * Se ejecuta automáticamente la primera vez que se accede a getCoachState_()
  */
 function migrateCoachStateIfNeeded_() {
-  const sh = getOrCreateSheet_(SHEETS.COACH_STATE, null);
+  const sh = getCoachStateSheet_();
   const data = sh.getDataRange().getValues();
-  
+
   // Si ya hay datos en CoachState (más de solo headers), no migrar
   if (data.length > 1) {
     return;
   }
-  
+
   // Intentar leer desde propiedades antiguas
   const props = PropertiesService.getScriptProperties();
   const oldWeekIndex = props.getProperty("COACH_WEEK_INDEX_V3");
@@ -31,27 +88,29 @@ function migrateCoachStateIfNeeded_() {
   const oldLastRem3 = props.getProperty("COACH_LAST_REM_3_V3");
   const oldLastRem4 = props.getProperty("COACH_LAST_REM_4_V3");
   const oldRitualDate = props.getProperty("COACH_RITUAL_DAILY_DATE_V3");
-  const oldRitualAffirmations = props.getProperty("COACH_RITUAL_DAILY_AFFIRMATIONS_V3");
-  
+  const oldRitualAffirmations = props.getProperty(
+    "COACH_RITUAL_DAILY_AFFIRMATIONS_V3",
+  );
+
   // Si hay al menos UNO de los valores antiguos, hace la migración
   if (oldWeekIndex || oldDay90 || oldDay21 || oldCycle21 || oldTrainDay14) {
     const row = [
-      new Date(),  // timestamp
-      isoDate_(new Date()),  // date
-      oldWeekIndex || 1,  // week_index
-      oldDay90 || 1,  // day90
-      oldDay21 || 1,  // day21
-      oldCycle21 || 1,  // cycle21
-      oldTrainDay14 || 1,  // train_day14
-      oldImpulseCount || 0,  // impulse_count
-      oldLastAM || "",  // last_am
-      oldLastPM || "",  // last_pm
-      oldLastRem1 || "",  // last_rem_1
-      oldLastRem2 || "",  // last_rem_2
-      oldLastRem3 || "",  // last_rem_3
-      oldLastRem4 || "",  // last_rem_4
-      oldRitualDate || "",  // ritual_daily_date
-      oldRitualAffirmations || ""  // ritual_daily_affirmations
+      new Date(), // timestamp
+      isoDate_(new Date()), // date
+      oldWeekIndex || 1, // week_index
+      oldDay90 || 1, // day90
+      oldDay21 || 1, // day21
+      oldCycle21 || 1, // cycle21
+      oldTrainDay14 || 1, // train_day14
+      oldImpulseCount || 0, // impulse_count
+      oldLastAM || "", // last_am
+      oldLastPM || "", // last_pm
+      oldLastRem1 || "", // last_rem_1
+      oldLastRem2 || "", // last_rem_2
+      oldLastRem3 || "", // last_rem_3
+      oldLastRem4 || "", // last_rem_4
+      oldRitualDate || "", // ritual_daily_date
+      oldRitualAffirmations || "", // ritual_daily_affirmations
     ];
     sh.appendRow(row);
   }
@@ -66,10 +125,10 @@ function migrateCoachStateIfNeeded_() {
 function getCoachState_() {
   // Migrar si es necesario
   migrateCoachStateIfNeeded_();
-  
-  const sh = getOrCreateSheet_(SHEETS.COACH_STATE, null);
+
+  const sh = getCoachStateSheet_();
   const data = sh.getDataRange().getValues();
-  
+
   if (data.length <= 1) {
     // Solo encabezados, no hay datos
     return {};
@@ -78,22 +137,23 @@ function getCoachState_() {
   // Toma la última fila (estado más reciente)
   const headers = data[0];
   const lastRow = data[data.length - 1];
-  
+
   const state = {};
   for (let i = 0; i < headers.length; i++) {
-    const header = String(headers[i]).toLowerCase();
+    const header = String(headers[i]).toLowerCase().trim();
     const value = lastRow[i];
-    
-    // Convierte a los tipos apropiados
-    if (header.includes("index") || header.includes("day") || header.includes("cycle") || header.includes("train") || header.includes("count")) {
-      state[header] = value ? parseInt(value, 10) : 0;
-    } else if (header === "timestamp" || header === "date") {
-      // Skip timestamp y date
+
+    if (COACH_STATE_SKIP_FIELDS.has(header)) continue;
+
+    // Convierte a los tipos apropiados usando el set explícito
+    if (COACH_STATE_NUMERIC_FIELDS.has(header)) {
+      state[header] = value !== "" && value != null ? parseInt(value, 10) : 0;
+      if (isNaN(state[header])) state[header] = 0;
     } else {
-      state[header] = value || "";
+      state[header] = value !== "" && value != null ? String(value) : "";
     }
   }
-  
+
   return state;
 }
 
@@ -102,30 +162,32 @@ function getCoachState_() {
  * @param {Object} updates - Propiedades a actualizar (ej: { week_index: 5, day21: 10 })
  */
 function updateCoachState_(updates) {
-  const sh = getOrCreateSheet_(SHEETS.COACH_STATE, null);
+  const sh = getCoachStateSheet_();
   const data = sh.getDataRange().getValues();
   const headers = data[0];
-  
+
   // Obtén estado actual
   const current = getCoachState_();
-  
+
   // Merge con updates
   const newState = Object.assign({}, current, updates);
-  
+
   // Construye la fila
   const row = [];
   for (let header of headers) {
-    const key = String(header).toLowerCase();
-    
+    const key = String(header).toLowerCase().trim();
+
     if (key === "timestamp") {
       row.push(new Date());
     } else if (key === "date") {
       row.push(isoDate_(new Date()));
     } else {
-      row.push(newState[key] || "");
+      // Usar check null-safe: 0 es un valor válido, no reemplazar con ""
+      const v = newState[key];
+      row.push(v !== undefined && v !== null ? v : "");
     }
   }
-  
+
   sh.appendRow(row);
 }
 

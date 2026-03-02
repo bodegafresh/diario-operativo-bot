@@ -189,6 +189,43 @@ function updateCoachState_(updates) {
   }
 
   sh.appendRow(row);
+
+  // Dual-write a Supabase (ignore on conflict por recorded_at)
+  try {
+    const ts = new Date();
+    const dt = isoDate_(ts);
+    sbUpsert_(
+      "coach_state",
+      [
+        {
+          recorded_at:                ts.toISOString(),
+          date:                       dt,
+          week_index:                 newState.week_index !== undefined ? newState.week_index : null,
+          day90:                      newState.day90 !== undefined ? newState.day90 : null,
+          day21:                      newState.day21 !== undefined ? newState.day21 : null,
+          cycle21:                    newState.cycle21 !== undefined ? newState.cycle21 : null,
+          train_day14:                newState.train_day14 !== undefined ? newState.train_day14 : null,
+          impulse_count:              newState.impulse_count || 0,
+          last_am:                    newState.last_am || null,
+          last_pm:                    newState.last_pm || null,
+          last_rem_1:                 newState.last_rem_1 || null,
+          last_rem_2:                 newState.last_rem_2 || null,
+          last_rem_3:                 newState.last_rem_3 || null,
+          last_rem_4:                 newState.last_rem_4 || null,
+          ritual_daily_date:          newState.ritual_daily_date || null,
+          ritual_daily_affirmations:  newState.ritual_daily_affirmations
+            ? (typeof newState.ritual_daily_affirmations === "string"
+                ? JSON.parse(newState.ritual_daily_affirmations)
+                : newState.ritual_daily_affirmations)
+            : [],
+        },
+      ],
+      "recorded_at",
+      true,
+    ); // ignore on conflict — log append-only
+  } catch (e) {
+    Logger.log("[SB coach_state] " + e.message);
+  }
 }
 
 /**

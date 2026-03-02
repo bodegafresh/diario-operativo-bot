@@ -157,12 +157,16 @@ function fullNameFromMsg_(msg) {
 }
 
 function appendDaily_(msg, normalized, rawText) {
+  const ts = new Date();
+  const dt = normalized.date || isoDate_(ts);
+  const usr = msg.from && msg.from.username ? msg.from.username : "";
+
   const sh = getOrCreateSheet_(SHEETS.DAILY, null);
   sh.appendRow([
-    new Date(),
-    normalized.date || isoDate_(new Date()),
+    ts,
+    dt,
     fullNameFromMsg_(msg),
-    msg.from && msg.from.username ? msg.from.username : "",
+    usr,
     msg.chat ? msg.chat.id : "",
     msg.message_id || "",
     msg.reply_to_message ? msg.reply_to_message.message_id : "",
@@ -189,66 +193,192 @@ function appendDaily_(msg, normalized, rawText) {
     normalized.notes || "",
     rawText || "",
   ]);
+
+  try {
+    sbUpsert_(
+      "daily",
+      [
+        {
+          recorded_at: ts.toISOString(),
+          date: dt,
+          from_name: fullNameFromMsg_(msg),
+          from_user: usr,
+          chat_id: String(msg.chat ? msg.chat.id : ""),
+          message_id: String(msg.message_id || ""),
+          reply_to_message_id: String(
+            msg.reply_to_message ? msg.reply_to_message.message_id : "",
+          ),
+          sleep_hours: normalized.sleep_hours,
+          energy: normalized.energy,
+          mood: normalized.mood,
+          focus_type: normalized.focus_type || "none",
+          focus_minutes: normalized.focus_minutes || 0,
+          training_json: normalized.training || [],
+          alcohol_consumed: !!normalized.alcohol_consumed,
+          alcohol_context: normalized.alcohol_context || "unknown",
+          alcohol_units: normalized.alcohol_units || 0,
+          stalk_occurred: !!normalized.stalk_occurred,
+          stalk_intensity: normalized.stalk_intensity || "none",
+          trading_trades: normalized.trading_trades || 0,
+          game_commits: normalized.game_commits || 0,
+          feature_done: !!normalized.feature_done,
+          notes: normalized.notes || null,
+          raw: rawText || null,
+        },
+      ],
+      "date,from_user",
+      false,
+    );
+  } catch (e) {
+    Logger.log("[SB daily] " + e.message);
+  }
 }
 
 function appendCheckin_(msg, row) {
+  const ts = new Date();
+  const dt = isoDate_(ts);
+  const usr = msg.from && msg.from.username ? msg.from.username : "";
+  const mid = String(msg.message_id || "");
+
   const sh = getOrCreateSheet_(SHEETS.CHECKINS, null);
   sh.appendRow([
-    new Date(),
-    isoDate_(new Date()),
+    ts,
+    dt,
     fullNameFromMsg_(msg),
-    msg.from && msg.from.username ? msg.from.username : "",
+    usr,
     msg.chat ? msg.chat.id : "",
-    msg.message_id || "",
+    mid,
     row.question || "",
     row.intensity,
     row.answer_raw || "",
   ]);
+
+  try {
+    sbUpsert_(
+      "checkins",
+      [
+        {
+          recorded_at: ts.toISOString(),
+          date: dt,
+          from_name: fullNameFromMsg_(msg),
+          from_user: usr,
+          chat_id: String(msg.chat ? msg.chat.id : ""),
+          message_id: mid,
+          question: row.question || "",
+          intensity_0_10: row.intensity,
+          answer_raw: row.answer_raw || null,
+        },
+      ],
+      "message_id",
+      false,
+    );
+  } catch (e) {
+    Logger.log("[SB checkin] " + e.message);
+  }
 }
 
 function appendEnglishVoice_(chatId, messageId, replyToMsgId, voiceMeta) {
   // voiceMeta: { file_id, file_unique_id, duration, mime_type, file_size }
   // Append inicial con status RECEIVED
+  const ts = new Date();
+  const dt = isoDate_(ts);
+
   const sh = getOrCreateSheet_(SHEETS.ENGLISH_VOICE, null);
   sh.appendRow([
-    new Date(),                          // timestamp
-    isoDate_(new Date()),                // date
-    chatId,                              // chat_id
-    messageId,                           // message_id
-    replyToMsgId || "",                  // reply_to_message_id
-    voiceMeta.file_id || "",             // file_id
-    voiceMeta.file_unique_id || "",      // file_unique_id
-    voiceMeta.mime_type || "",           // mime_type
-    voiceMeta.file_size || 0,            // file_size_bytes
-    voiceMeta.duration || 0,             // duration_seconds
-    "",                                  // drive_file_id (será llenado luego)
-    "",                                  // drive_file_url
-    "RECEIVED",                          // status
-    "",                                  // transcript_full
-    "",                                  // transcript_short
-    "",                                  // fixes_1
-    "",                                  // fixes_2
-    "",                                  // fixes_3
-    "",                                  // better_version
-    "",                                  // tomorrow_drill
-    "",                                  // verb_focus
-    "",                                  // error_message
-    isoDateTime_(new Date()),            // updated_at
+    ts, // timestamp
+    dt, // date
+    chatId, // chat_id
+    messageId, // message_id
+    replyToMsgId || "", // reply_to_message_id
+    voiceMeta.file_id || "", // file_id
+    voiceMeta.file_unique_id || "", // file_unique_id
+    voiceMeta.mime_type || "", // mime_type
+    voiceMeta.file_size || 0, // file_size_bytes
+    voiceMeta.duration || 0, // duration_seconds
+    "", // drive_file_id (será llenado luego)
+    "", // drive_file_url
+    "RECEIVED", // status
+    "", // transcript_full
+    "", // transcript_short
+    "", // fixes_1
+    "", // fixes_2
+    "", // fixes_3
+    "", // better_version
+    "", // tomorrow_drill
+    "", // verb_focus
+    "", // error_message
+    isoDateTime_(ts), // updated_at
   ]);
+
+  console.log("[SB] appendEnglishVoice_ reached, message_id=" + String(messageId));
+  try {
+    sbUpsert_(
+      "english_voice",
+      [
+        {
+          recorded_at: ts.toISOString(),
+          updated_at: ts.toISOString(),
+          date: dt,
+          chat_id: String(chatId),
+          message_id: String(messageId),
+          reply_to_message_id: String(replyToMsgId || ""),
+          file_id: voiceMeta.file_id || null,
+          file_unique_id: voiceMeta.file_unique_id || null,
+          mime_type: voiceMeta.mime_type || null,
+          file_size_bytes: voiceMeta.file_size || null,
+          duration_seconds: voiceMeta.duration || null,
+          status: "RECEIVED",
+        },
+      ],
+      "message_id",
+      false,
+    ); // DO UPDATE: si ya existe la fila, actualiza los metadatos (audio, date, etc.) pero el status avanzado se preserva vía updateEnglishVoiceLog_
+    console.log("[SB] appendEnglishVoice_ sbUpsert_ completed OK");
+  } catch (e) {
+    console.log("[SB english_voice init] ERROR: " + e.message);
+  }
 }
 
 function updateEnglishVoiceLog_(messageId, updates) {
   // updates: { status?, drive_file_id?, drive_file_url?, transcript_full?, transcript_short?,
   //            fixes_1?, fixes_2?, fixes_3?, better_version?, tomorrow_drill?, verb_focus?, error_message? }
+
+  const fieldsToUpdate = [
+    "status",
+    "drive_file_id",
+    "drive_file_url",
+    "transcript_full",
+    "transcript_short",
+    "fixes_1",
+    "fixes_2",
+    "fixes_3",
+    "better_version",
+    "tomorrow_drill",
+    "verb_focus",
+    "error_message",
+    "updated_at",
+  ];
+
+  // ── Supabase PATCH (independiente de Sheets — corre siempre) ────────────────
+  try {
+    const patch = {};
+    fieldsToUpdate.forEach(function (f) {
+      if (updates.hasOwnProperty(f)) patch[f] = updates[f];
+    });
+    if (!patch.updated_at) patch.updated_at = new Date().toISOString();
+    sbUpdate_("english_voice", { message_id: "eq." + String(messageId) }, patch);
+  } catch (e) {
+    console.log("[SB english_voice update] " + e.message);
+  }
+
+  // ── Google Sheets update ────────────────────────────────────────────────────
   const sh = getOrCreateSheet_(SHEETS.ENGLISH_VOICE, null);
   const data = sh.getDataRange().getValues();
-  
-  // Encabezados: [0]
+
   const headers = data[0];
   const msgIdIdx = headers.indexOf("message_id");
-  if (msgIdIdx < 0) return; // No encontru columna
-  
-  // Buscar fila por message_id
+  if (msgIdIdx < 0) return;
+
   let rowIdx = -1;
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][msgIdIdx]) === String(messageId)) {
@@ -256,16 +386,9 @@ function updateEnglishVoiceLog_(messageId, updates) {
       break;
     }
   }
-  
-  if (rowIdx < 0) return; // Fila no encontrada
-  
-  // Actualizar campos
-  const fieldsToUpdate = [
-    "status", "drive_file_id", "drive_file_url", "transcript_full", "transcript_short",
-    "fixes_1", "fixes_2", "fixes_3", "better_version", "tomorrow_drill", "verb_focus",
-    "error_message", "updated_at"
-  ];
-  
+
+  if (rowIdx < 0) return;
+
   for (const field of fieldsToUpdate) {
     const colIdx = headers.indexOf(field);
     if (colIdx >= 0 && updates.hasOwnProperty(field)) {
@@ -279,15 +402,38 @@ function updateEnglishVoiceLog_(messageId, updates) {
 }
 
 function logPomodoro_(event, phase, cycle, meta) {
+  const ts = new Date();
+  const dt = isoDate_(ts);
+
   const sh = getOrCreateSheet_(SHEETS.POMODORO, null);
   sh.appendRow([
-    new Date(),
-    isoDate_(new Date()),
+    ts,
+    dt,
     event,
     phase || "",
     cycle || "",
     meta ? JSON.stringify(meta) : "",
   ]);
+
+  try {
+    sbUpsert_(
+      "pomodoro",
+      [
+        {
+          recorded_at: ts.toISOString(),
+          date: dt,
+          event: event,
+          phase: phase || null,
+          cycle: cycle || null,
+          meta: meta || {},
+        },
+      ],
+      "recorded_at",
+      true,
+    ); // ignore on conflict
+  } catch (e) {
+    Logger.log("[SB pomodoro] " + e.message);
+  }
 }
 
 /** Helper: seguro boolean->1/0 */
@@ -365,4 +511,41 @@ function appendCoachV3Log_(ts, data) {
   ];
 
   sh.appendRow(row);
+
+  try {
+    sbUpsert_(
+      "coach",
+      [
+        {
+          recorded_at: (ts || new Date()).toISOString(),
+          date: isoDate_(ts || new Date()),
+          level: (data && data.level) || null,
+          start_iso: st ? st.startIso : null,
+          day90: st ? st.day90 : null,
+          week_1_12: st ? st.week : null,
+          cycle21_1_4: st ? st.cycle21 : null,
+          day21_1_21: st ? st.day21 : null,
+          train_day14_1_14: st ? st.trainDay : null,
+          phase: ph ? ph.phase : null,
+          theme21: th ? th.name : null,
+          score_0_6: data && data.score != null ? data.score : null,
+          tier: tier || null,
+          alcohol_bool: !!(data && data.drank),
+          impulses_count: data && data.impulses != null ? data.impulses : 0,
+          workout_done: !!(tasks.workout),
+          read_done: !!(tasks.read),
+          voice_done: !!(tasks.voice),
+          english_done: !!(tasks.english),
+          story_done: !!(tasks.story),
+          ritual_done: !!(tasks.ritual),
+          note: (data && data.note) || null,
+          raw_json: data || {},
+        },
+      ],
+      "date",
+      false,
+    );
+  } catch (e) {
+    Logger.log("[SB coach] " + e.message);
+  }
 }

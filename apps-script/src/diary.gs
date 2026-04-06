@@ -31,7 +31,7 @@ function diaryPrompt_() {
   const dateStr = Utilities.formatDate(
     today,
     Session.getScriptTimeZone(),
-    "yyyy-MM-dd"
+    "yyyy-MM-dd",
   );
 
   // Crear lista de moods en formato compacto (3 por línea)
@@ -115,13 +115,18 @@ function parseDiaryText_(text) {
     mood = moodMap[mood];
   }
 
-  // Si no está en la lista, mantener el valor pero avisar
-  if (!MOOD_OPTIONS.includes(mood) && mood !== "unknown") {
-    // Mantener el valor original pero podría logging aquí
-    mood = mood;
+  // Fallback seguro: si no es un valor válido del ENUM, usar "neutral"
+  if (!MOOD_OPTIONS.includes(mood)) {
+    Logger.log("[DIARY] mood '" + mood + "' no reconocido, usando 'neutral'");
+    mood = "neutral";
   }
 
-  const focus_type = kv.focus_type || kv.focus || "none";
+  const FOCUS_TYPE_OPTIONS = ["trading", "project", "work", "lectura", "estudio", "none"];
+  let focus_type = String(kv.focus_type || kv.focus || "none").toLowerCase().trim();
+  if (!FOCUS_TYPE_OPTIONS.includes(focus_type)) {
+    Logger.log("[DIARY] focus_type '" + focus_type + "' no reconocido, usando 'none'");
+    focus_type = "none";
+  }
   const focus_minutes = toInt_(kv.focus_minutes || kv.focus_min || kv.minutes);
 
   const training = parseTraining_(kv.training);
@@ -137,7 +142,7 @@ function parseDiaryText_(text) {
     kv.stalk_occurred != null
       ? toBool01_(kv.stalk_occurred) === 1
       : toBool01_(kv.stalk) === 1;
-  const stalk_intensity = kv.stalk_intensity || kv.intensity || "unknown";
+  const stalk_intensity = kv.stalk_intensity || kv.intensity || "none";
 
   const trading_trades = toInt_(kv.trading_trades);
   const game_commits = toInt_(kv.game_commits);

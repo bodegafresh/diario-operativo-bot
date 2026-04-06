@@ -114,6 +114,29 @@ def _read_sheets(
     return DataBundle(daily=daily, checkins=checkins, pomodoro=pomodoro, coach=coach_df)
 
 
+def _read_supabase() -> DataBundle:
+    from .supabase_client import load_from_env
+
+    sb = load_from_env()
+
+    daily    = pd.DataFrame(sb.select("daily",    order="date.asc"))
+    checkins = pd.DataFrame(sb.select("checkins", order="date.asc"))
+    pomodoro = pd.DataFrame(sb.select("pomodoro", order="recorded_at.asc"))
+    coach    = pd.DataFrame(sb.select("coach",    order="date.asc"))
+
+    # Alias recorded_at → timestamp para consistencia con las otras fuentes
+    for df in [daily, checkins, pomodoro, coach]:
+        if "recorded_at" in df.columns and "timestamp" not in df.columns:
+            df["timestamp"] = df["recorded_at"]
+
+    return DataBundle(
+        daily=_empty_to_na(daily),
+        checkins=_empty_to_na(checkins),
+        pomodoro=_empty_to_na(pomodoro),
+        coach=_empty_to_na(coach),
+    )
+
+
 def load_data(
     source: str,
     excel_path: str = "diario operativo.xlsx",
@@ -124,4 +147,6 @@ def load_data(
         return _read_excel(excel_path)
     if source == "sheets":
         return _read_sheets(spreadsheet_id=spreadsheet_id, creds_path=creds_path)
+    if source == "supabase":
+        return _read_supabase()
     raise ValueError(f"Unknown source: {source}")

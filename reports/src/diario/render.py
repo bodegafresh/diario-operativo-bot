@@ -36,10 +36,13 @@ def _to_records(df: pd.DataFrame, limit: int | None = None) -> list[dict[str, An
                     rec[k] = v.isoformat()
                 except Exception:
                     rec[k] = str(v)
-            elif pd.isna(v):
-                rec[k] = None
-            else:
+            elif isinstance(v, (list, dict)):
                 rec[k] = v
+            else:
+                try:
+                    rec[k] = None if pd.isna(v) else v
+                except (TypeError, ValueError):
+                    rec[k] = v
         out.append(rec)
     return out
 
